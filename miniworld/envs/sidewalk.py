@@ -1,7 +1,9 @@
 import math
 
+import math
+
 import numpy as np
-from gymnasium import spaces, utils
+from gymnasium import utils
 
 from miniworld.entity import Box, MeshEnt
 from miniworld.miniworld import MiniWorldEnv
@@ -43,7 +45,7 @@ class Sidewalk(MiniWorldEnv, utils.EzPickle):
         utils.EzPickle.__init__(self, **kwargs)
 
         # Allow only the movement actions
-        self.action_space = spaces.Discrete(self.actions.move_forward + 1)
+        self.set_discrete_actions()
 
     def _gen_world(self):
         sidewalk = self.add_rect_room(

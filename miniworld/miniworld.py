@@ -471,6 +471,11 @@ class MiniWorldEnv(gym.Env):
         # Action enumeration for this environment
         self.actions = MiniWorldEnv.Actions
 
+        # Optional mapping used when environments expose a discrete action space
+        # while still driving the continuous action vectors expected by the base
+        # environment step logic.
+        self._discrete_actions = None
+
         # Continuous actions: forward/strafe speeds and yaw/pitch deltas
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32),
@@ -596,6 +601,49 @@ class MiniWorldEnv(gym.Env):
         # Return first observation
         return obs, {"agent": self._get_agent_state()}
 
+    def _action_from_components(
+        self,
+        *,
+        forward: float = 0.0,
+        strafe: float = 0.0,
+        turn: float = 0.0,
+        pitch: float = 0.0,
+        pickup: float = 0.0,
+        drop: float = 0.0,
+    ) -> np.ndarray:
+        """Build an action vector using the environment's action ordering."""
+
+        action = np.zeros(len(self.actions), dtype=np.float32)
+        action[self.actions.forward_speed] = forward
+        action[self.actions.strafe_speed] = strafe
+        action[self.actions.turn_delta] = turn
+        action[self.actions.pitch_delta] = pitch
+        action[self.actions.pickup] = pickup
+        action[self.actions.drop] = drop
+
+        return action
+
+    def _default_discrete_actions(self):
+        """Standard left/right/forward discrete controls."""
+
+        return [
+            self._action_from_components(turn=-1.0),
+            self._action_from_components(turn=1.0),
+            self._action_from_components(forward=1.0),
+        ]
+
+    def set_discrete_actions(self, actions=None):
+        """
+        Configure a discrete action mapping. Each entry should be a length
+        ``len(self.actions)`` action vector.
+        """
+
+        if actions is None:
+            actions = self._default_discrete_actions()
+
+        self._discrete_actions = [np.asarray(act, dtype=np.float32) for act in actions]
+        self.action_space = spaces.Discrete(len(self._discrete_actions))
+
     def _get_agent_state(self):
         """
         Current agent state useful for debugging and external consumers.
@@ -689,7 +737,21 @@ class MiniWorldEnv(gym.Env):
         fwd_drift = self.params.sample(rand, "forward_drift")
         turn_step = self.params.sample(rand, "turn_step")
 
-        action = np.asarray(action, dtype=np.float32)
+        if np.isscalar(action):
+            if self._discrete_actions is None:
+                raise ValueError(
+                    "Received a discrete action but no discrete mapping is configured"
+                )
+
+            action_index = int(action)
+            if action_index < 0 or action_index >= len(self._discrete_actions):
+                raise ValueError(
+                    f"Discrete action {action_index} outside valid range"
+                )
+
+            action = self._discrete_actions[action_index]
+        else:
+            action = np.asarray(action, dtype=np.float32)
         if action.shape != (len(self.actions),):
             raise ValueError(
                 f"Action should have shape {(len(self.actions),)}, got {action.shape}"

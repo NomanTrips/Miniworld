@@ -1,6 +1,6 @@
 import math
 
-from gymnasium import spaces, utils
+from gymnasium import utils
 
 from miniworld.entity import Box
 from miniworld.miniworld import MiniWorldEnv
@@ -49,7 +49,7 @@ class TMaze(MiniWorldEnv, utils.EzPickle):
         utils.EzPickle.__init__(self, goal_pos, **kwargs)
 
         # Allow only movement actions (left/right/forward)
-        self.action_space = spaces.Discrete(self.actions.move_forward + 1)
+        self.set_discrete_actions()
 
     def _gen_world(self):
         room1 = self.add_rect_room(min_x=-1, max_x=8, min_z=-2, max_z=2)
