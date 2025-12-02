@@ -1,6 +1,6 @@
 import math
 
-from gymnasium import spaces, utils
+from gymnasium import utils
 
 from miniworld.entity import Box
 from miniworld.miniworld import MiniWorldEnv
@@ -50,7 +50,7 @@ class Hallway(MiniWorldEnv, utils.EzPickle):
         utils.EzPickle.__init__(self, length, **kwargs)
 
         # Allow only movement actions (left/right/forward)
-        self.action_space = spaces.Discrete(self.actions.move_forward + 1)
+        self.set_discrete_actions()
 
     def _gen_world(self):
         # Create a long rectangular room

@@ -1,4 +1,4 @@
-from gymnasium import spaces, utils
+from gymnasium import utils
 
 from miniworld.entity import Box
 from miniworld.miniworld import MiniWorldEnv
@@ -68,7 +68,7 @@ class Maze(MiniWorldEnv, utils.EzPickle):
         )
 
         # Allow only the movement actions
-        self.action_space = spaces.Discrete(self.actions.move_forward + 1)
+        self.set_discrete_actions()
 
     def _gen_world(self):
         rows = []

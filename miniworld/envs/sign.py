@@ -2,6 +2,7 @@ import math
 from typing import Optional, Tuple
 
 import gymnasium as gym
+import numpy as np
 from gymnasium import utils
 from gymnasium.core import ObsType
 from gymnasium.spaces import Dict, Discrete
@@ -100,7 +101,15 @@ class Sign(MiniWorldEnv, utils.EzPickle):
         self.observation_space = Dict(obs=self.observation_space, goal=Discrete(2))
 
         # Allow for left / right / forward + custom end episode
-        self.action_space = gym.spaces.Discrete(self.actions.move_forward + 2)
+        self._end_action_index = 3
+        self.set_discrete_actions(
+            [
+                self._action_from_components(turn=-1.0),
+                self._action_from_components(turn=1.0),
+                self._action_from_components(forward=1.0),
+                self._action_from_components(),
+            ]
+        )
 
     def set_color_index(self, color_index):
         self._color_index = color_index
@@ -156,9 +165,11 @@ class Sign(MiniWorldEnv, utils.EzPickle):
         self.place_agent(min_x=4, max_x=5, min_z=4, max_z=6)
 
     def step(self, action):
+        end_requested = np.isscalar(action) and int(action) == self._end_action_index
+
         obs, reward, termination, truncation, info = super().step(action)
 
-        if action == self.actions.move_forward + 1:  # custom end episode action
+        if end_requested:
             termination = True
 
         for obj_index, object_pair in enumerate(self._objects):

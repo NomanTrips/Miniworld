@@ -1,4 +1,4 @@
-from gymnasium import spaces, utils
+from gymnasium import utils
 
 from miniworld.entity import COLOR_NAMES, Ball, Box, Key
 from miniworld.miniworld import MiniWorldEnv
@@ -49,7 +49,15 @@ class PickupObjects(MiniWorldEnv, utils.EzPickle):
         utils.EzPickle.__init__(self, size, num_objs, **kwargs)
 
         # Reduce the action space
-        self.action_space = spaces.Discrete(self.actions.pickup + 1)
+        self.set_discrete_actions(
+            [
+                self._action_from_components(turn=-1.0),
+                self._action_from_components(turn=1.0),
+                self._action_from_components(forward=1.0),
+                self._action_from_components(forward=-1.0),
+                self._action_from_components(pickup=1.0),
+            ]
+        )
 
     def _gen_world(self):
         self.add_rect_room(

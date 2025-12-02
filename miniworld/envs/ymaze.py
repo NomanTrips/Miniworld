@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from gymnasium import spaces, utils
+from gymnasium import utils
 
 from miniworld.entity import Box
 from miniworld.math import gen_rot_matrix
@@ -51,7 +51,7 @@ class YMaze(MiniWorldEnv, utils.EzPickle):
         utils.EzPickle.__init__(self, goal_pos, **kwargs)
 
         # Allow only movement actions (left/right/forward)
-        self.action_space = spaces.Discrete(self.actions.move_forward + 1)
+        self.set_discrete_actions()
 
     def _gen_world(self):
         # Outline of the main (starting) arm
