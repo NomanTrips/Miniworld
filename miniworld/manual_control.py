@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import pyglet
 from pyglet.window import key
 
@@ -7,6 +8,16 @@ from pyglet.window import key
 class ManualControl:
     def __init__(self, env, no_time_limit: bool, domain_rand: bool):
         self.env = env.unwrapped
+
+        self.key_handler = key.KeyStateHandler()
+        self.mouse_dx = 0.0
+        self.mouse_dy = 0.0
+        self.pickup_requested = False
+        self.drop_requested = False
+
+        # Mouse sensitivity factors for yaw/pitch updates
+        self.turn_sensitivity = 0.0025
+        self.pitch_sensitivity = 0.0025
 
         if no_time_limit:
             self.env.max_episode_steps = math.inf
@@ -17,7 +28,9 @@ class ManualControl:
         print("============")
         print("Instructions")
         print("============")
-        print("move: arrow keys\npickup: P\ndrop: D\ndone: ENTER\nquit: ESC")
+        print(
+            "move: arrow keys (mouse to look)\nstrafe: A/D\npickup: P\ndrop: D\nquit: ESC"
+        )
         print("============")
 
         self.env.reset()
@@ -26,6 +39,10 @@ class ManualControl:
         self.env.render()
 
         env = self.env
+
+        window = env.unwrapped.window
+        window.push_handlers(self.key_handler)
+        window.set_exclusive_mouse(True)
 
         @env.unwrapped.window.event
         def on_key_press(symbol, modifiers):
@@ -43,24 +60,26 @@ class ManualControl:
             if symbol == key.ESCAPE:
                 self.env.close()
 
-            if symbol == key.UP:
-                self.step(self.env.unwrapped.actions.move_forward)
-            elif symbol == key.DOWN:
-                self.step(self.env.unwrapped.actions.move_back)
-            elif symbol == key.LEFT:
-                self.step(self.env.unwrapped.actions.turn_left)
-            elif symbol == key.RIGHT:
-                self.step(self.env.unwrapped.actions.turn_right)
-            elif symbol == key.PAGEUP or symbol == key.P:
-                self.step(self.env.unwrapped.actions.pickup)
+            if symbol == key.PAGEUP or symbol == key.P:
+                self.pickup_requested = True
             elif symbol == key.PAGEDOWN or symbol == key.D:
-                self.step(self.env.unwrapped.actions.drop)
+                self.drop_requested = True
             elif symbol == key.ENTER:
-                self.step(self.env.unwrapped.actions.done)
+                pyglet.app.exit()
 
         @env.unwrapped.window.event
         def on_key_release(symbol, modifiers):
             pass
+
+        @env.unwrapped.window.event
+        def on_mouse_motion(x, y, dx, dy):
+            self.mouse_dx += dx
+            self.mouse_dy += dy
+
+        @env.unwrapped.window.event
+        def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
+            self.mouse_dx += dx
+            self.mouse_dy += dy
 
         @env.unwrapped.window.event
         def on_draw():
@@ -70,14 +89,65 @@ class ManualControl:
         def on_close():
             pyglet.app.exit()
 
+        def update(dt):
+            action = np.zeros(len(self.env.actions), dtype=np.float32)
+
+            # Keyboard state-based movement
+            action[self.env.actions.forward_speed] = (
+                float(self.key_handler[key.UP]) - float(self.key_handler[key.DOWN])
+            )
+            action[self.env.actions.strafe_speed] = (
+                float(self.key_handler[key.D]) - float(self.key_handler[key.A])
+            )
+
+            turn_input = float(self.key_handler[key.RIGHT]) - float(
+                self.key_handler[key.LEFT]
+            )
+            turn_input += self.mouse_dx * self.turn_sensitivity
+            pitch_input = self.mouse_dy * self.pitch_sensitivity
+
+            action[self.env.actions.turn_delta] = turn_input
+            action[self.env.actions.pitch_delta] = pitch_input
+
+            if self.pickup_requested:
+                action[self.env.actions.pickup] = 1.0
+            if self.drop_requested:
+                action[self.env.actions.drop] = 1.0
+
+            self.mouse_dx = 0.0
+            self.mouse_dy = 0.0
+            self.pickup_requested = False
+            self.drop_requested = False
+
+            action = np.clip(action, -1.0, 1.0)
+
+            if np.any(action != 0.0):
+                self.step(action)
+            else:
+                self.env.render()
+
+        pyglet.clock.schedule_interval(update, 1.0 / 60.0)
+
         # Enter main event loop
         pyglet.app.run()
 
         self.env.close()
 
     def step(self, action):
+        if isinstance(action, np.ndarray):
+            action_desc = (
+                f"forward={action[self.env.actions.forward_speed]:.2f} "
+                f"strafe={action[self.env.actions.strafe_speed]:.2f} "
+                f"turn={action[self.env.actions.turn_delta]:.2f} "
+                f"pitch={action[self.env.actions.pitch_delta]:.2f} "
+                f"pickup={action[self.env.actions.pickup]:.0f} "
+                f"drop={action[self.env.actions.drop]:.0f}"
+            )
+        else:
+            action_desc = self.env.unwrapped.actions(action).name
+
         print(
-            f"step {self.env.unwrapped.step_count + 1}/{self.env.unwrapped.max_episode_steps}: {self.env.unwrapped.actions(action).name}"
+            f"step {self.env.unwrapped.step_count + 1}/{self.env.unwrapped.max_episode_steps}: {action_desc}"
         )
 
         obs, reward, termination, truncation, info = self.env.step(action)
