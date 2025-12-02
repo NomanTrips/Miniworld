@@ -2,12 +2,16 @@ import math
 
 import numpy as np
 import pyglet
+from gymnasium import spaces
 from pyglet.window import key
 
 
 class ManualControl:
     def __init__(self, env, no_time_limit: bool, domain_rand: bool):
         self.env = env.unwrapped
+        self._box_action_space = self._get_box_action_space()
+        self._discrete_actions = self._get_discrete_actions()
+        self._discrete_action_map = self._build_discrete_action_lookup()
 
         self.key_handler = key.KeyStateHandler()
         self.mouse_dx = 0.0
@@ -119,12 +123,20 @@ class ManualControl:
             self.pickup_requested = False
             self.drop_requested = False
 
-            action = np.clip(action, -1.0, 1.0)
+            action_to_take = self._map_controls_to_action(action)
 
-            if np.any(action != 0.0):
-                self.step(action)
-            else:
+            if action_to_take is None:
                 self.env.render()
+                return
+
+            if isinstance(action_to_take, np.ndarray) and self._box_action_space is not None:
+                action_to_take = np.clip(
+                    action_to_take,
+                    self._box_action_space.low,
+                    self._box_action_space.high,
+                )
+
+            self.step(action_to_take)
 
         pyglet.clock.schedule_interval(update, 1.0 / 60.0)
 
@@ -135,16 +147,12 @@ class ManualControl:
 
     def step(self, action):
         if isinstance(action, np.ndarray):
-            action_desc = (
-                f"forward={action[self.env.actions.forward_speed]:.2f} "
-                f"strafe={action[self.env.actions.strafe_speed]:.2f} "
-                f"turn={action[self.env.actions.turn_delta]:.2f} "
-                f"pitch={action[self.env.actions.pitch_delta]:.2f} "
-                f"pickup={action[self.env.actions.pickup]:.0f} "
-                f"drop={action[self.env.actions.drop]:.0f}"
-            )
+            action_desc = self._describe_action_vector(action)
+        elif isinstance(self.env.action_space, spaces.Discrete):
+            action_vector = self._discrete_actions[int(action)]
+            action_desc = self._describe_action_vector(action_vector)
         else:
-            action_desc = self.env.unwrapped.actions(action).name
+            action_desc = str(action)
 
         print(
             f"step {self.env.unwrapped.step_count + 1}/{self.env.unwrapped.max_episode_steps}: {action_desc}"
@@ -160,3 +168,112 @@ class ManualControl:
             self.env.reset()
 
         self.env.render()
+
+    def _get_box_action_space(self):
+        action_space = getattr(self.env, "action_space", None)
+        if isinstance(action_space, spaces.Box):
+            return action_space
+
+        try:
+            low = np.array([-1.0, -1.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32)
+            high = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+            return spaces.Box(low=low, high=high, dtype=np.float32)
+        except Exception:
+            return None
+
+    def _get_discrete_actions(self):
+        discrete_actions = getattr(self.env, "_discrete_actions", None)
+        if discrete_actions is None and hasattr(self.env, "_default_discrete_actions"):
+            discrete_actions = self.env._default_discrete_actions()
+
+        if discrete_actions is None:
+            return []
+
+        return [np.asarray(action, dtype=np.float32) for action in discrete_actions]
+
+    def _build_discrete_action_lookup(self):
+        action_map = {}
+
+        for idx, action in enumerate(self._discrete_actions):
+            if action[self.env.actions.forward_speed] > 0:
+                action_map.setdefault("forward", idx)
+            if action[self.env.actions.forward_speed] < 0:
+                action_map.setdefault("backward", idx)
+            if action[self.env.actions.strafe_speed] > 0:
+                action_map.setdefault("strafe_right", idx)
+            if action[self.env.actions.strafe_speed] < 0:
+                action_map.setdefault("strafe_left", idx)
+            if action[self.env.actions.turn_delta] > 0:
+                action_map.setdefault("turn_right", idx)
+            if action[self.env.actions.turn_delta] < 0:
+                action_map.setdefault("turn_left", idx)
+            if action[self.env.actions.pitch_delta] > 0:
+                action_map.setdefault("pitch_up", idx)
+            if action[self.env.actions.pitch_delta] < 0:
+                action_map.setdefault("pitch_down", idx)
+            if action[self.env.actions.pickup] > 0.5:
+                action_map.setdefault("pickup", idx)
+            if action[self.env.actions.drop] > 0.5:
+                action_map.setdefault("drop", idx)
+
+        return action_map
+
+    def _map_controls_to_action(self, action):
+        if isinstance(self.env.action_space, spaces.Discrete):
+            if not self._discrete_action_map:
+                return None
+
+            return self._map_to_discrete_index(action)
+
+        if np.any(action != 0.0):
+            return action
+
+        return None
+
+    def _map_to_discrete_index(self, action):
+        inputs = []
+
+        if action[self.env.actions.pickup] > 0.5 and "pickup" in self._discrete_action_map:
+            inputs.append(("pickup", action[self.env.actions.pickup]))
+        if action[self.env.actions.drop] > 0.5 and "drop" in self._discrete_action_map:
+            inputs.append(("drop", action[self.env.actions.drop]))
+
+        forward = action[self.env.actions.forward_speed]
+        if forward > 0 and "forward" in self._discrete_action_map:
+            inputs.append(("forward", forward))
+        if forward < 0 and "backward" in self._discrete_action_map:
+            inputs.append(("backward", forward))
+
+        strafe = action[self.env.actions.strafe_speed]
+        if strafe > 0 and "strafe_right" in self._discrete_action_map:
+            inputs.append(("strafe_right", strafe))
+        if strafe < 0 and "strafe_left" in self._discrete_action_map:
+            inputs.append(("strafe_left", strafe))
+
+        turn = action[self.env.actions.turn_delta]
+        if turn > 0 and "turn_right" in self._discrete_action_map:
+            inputs.append(("turn_right", turn))
+        if turn < 0 and "turn_left" in self._discrete_action_map:
+            inputs.append(("turn_left", turn))
+
+        pitch = action[self.env.actions.pitch_delta]
+        if pitch > 0 and "pitch_up" in self._discrete_action_map:
+            inputs.append(("pitch_up", pitch))
+        if pitch < 0 and "pitch_down" in self._discrete_action_map:
+            inputs.append(("pitch_down", pitch))
+
+        if not inputs:
+            return None
+
+        action_name, _ = max(inputs, key=lambda entry: abs(entry[1]))
+        return self._discrete_action_map[action_name]
+
+    def _describe_action_vector(self, action):
+        return (
+            f"forward={action[self.env.actions.forward_speed]:.2f} "
+            f"strafe={action[self.env.actions.strafe_speed]:.2f} "
+            f"turn={action[self.env.actions.turn_delta]:.2f} "
+            f"pitch={action[self.env.actions.pitch_delta]:.2f} "
+            f"pickup={action[self.env.actions.pickup]:.0f} "
+            f"drop={action[self.env.actions.drop]:.0f}"
+        )
