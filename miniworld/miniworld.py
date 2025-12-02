@@ -449,23 +449,12 @@ class MiniWorldEnv(gym.Env):
 
     # Enumeration of possible actions
     class Actions(IntEnum):
-        # Turn left or right by a small amount
-        turn_left = 0
-        turn_right = 1
-
-        # Move forward or back by a small amount
-        move_forward = 2
-        move_back = 3
-
-        # Pick up or drop an object being carried
+        forward_speed = 0
+        strafe_speed = 1
+        turn_delta = 2
+        pitch_delta = 3
         pickup = 4
         drop = 5
-
-        # Toggle/activate an object
-        toggle = 6
-
-        # Done completing task
-        done = 7
 
     def __init__(
         self,
@@ -482,8 +471,12 @@ class MiniWorldEnv(gym.Env):
         # Action enumeration for this environment
         self.actions = MiniWorldEnv.Actions
 
-        # Actions are discrete integer values
-        self.action_space = spaces.Discrete(len(self.actions))
+        # Continuous actions: forward/strafe speeds and yaw/pitch deltas
+        self.action_space = spaces.Box(
+            low=np.array([-1.0, -1.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32),
+            high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+            dtype=np.float32,
+        )
 
         # Observations are RGB images with pixels in [0, 255]
         self.observation_space = spaces.Box(
@@ -617,15 +610,15 @@ class MiniWorldEnv(gym.Env):
 
         return pos
 
-    def move_agent(self, fwd_dist, fwd_drift):
+    def move_agent(self, fwd_dist, strafe_dist):
         """
-        Move the agent forward
+        Move the agent using forward and strafe distances
         """
 
         next_pos = (
             self.agent.pos
             + self.agent.dir_vec * fwd_dist
-            + self.agent.right_vec * fwd_drift
+            + self.agent.right_vec * strafe_dist
         )
 
         if self.intersect(self.agent, next_pos, self.agent.radius):
@@ -639,20 +632,25 @@ class MiniWorldEnv(gym.Env):
                 return False
 
             carrying.pos = next_carrying_pos
+            carrying.dir = self.agent.dir
 
         self.agent.pos = next_pos
 
         return True
 
-    def turn_agent(self, turn_angle):
+    def _update_agent_orientation(self, yaw_delta, pitch_delta):
         """
-        Turn the agent left or right
+        Apply yaw and pitch deltas to the agent, clamping pitch and
+        ensuring carried objects remain collision-free after the update.
         """
 
-        turn_angle *= math.pi / 180
         orig_dir = self.agent.dir
+        orig_pitch = self.agent.cam_pitch
 
-        self.agent.dir += turn_angle
+        self.agent.dir += yaw_delta
+        self.agent.cam_pitch = np.clip(
+            self.agent.cam_pitch + pitch_delta, -89.0, 89.0
+        )
 
         carrying = self.agent.carrying
         if carrying:
@@ -660,6 +658,7 @@ class MiniWorldEnv(gym.Env):
 
             if self.intersect(carrying, pos, carrying.radius):
                 self.agent.dir = orig_dir
+                self.agent.cam_pitch = orig_pitch
                 return False
 
             carrying.pos = pos
@@ -679,39 +678,30 @@ class MiniWorldEnv(gym.Env):
         fwd_drift = self.params.sample(rand, "forward_drift")
         turn_step = self.params.sample(rand, "turn_step")
 
-        if action == self.actions.move_forward:
-            self.move_agent(fwd_step, fwd_drift)
+        action = np.asarray(action, dtype=np.float32)
+        if action.shape != (len(self.actions),):
+            raise ValueError(
+                f"Action should have shape {(len(self.actions),)}, got {action.shape}"
+            )
+        action = np.clip(action, self.action_space.low, self.action_space.high)
 
-        elif action == self.actions.move_back:
-            self.move_agent(-fwd_step, fwd_drift)
+        yaw_delta = action[self.actions.turn_delta] * turn_step * math.pi / 180
+        pitch_delta = action[self.actions.pitch_delta] * turn_step
+        self._update_agent_orientation(yaw_delta, pitch_delta)
 
-        elif action == self.actions.turn_left:
-            self.turn_agent(turn_step)
+        forward_dist = action[self.actions.forward_speed] * fwd_step
+        strafe_dist = action[self.actions.strafe_speed] * fwd_step + fwd_drift
+        self.move_agent(forward_dist, strafe_dist)
 
-        elif action == self.actions.turn_right:
-            self.turn_agent(-turn_step)
-
-        # Pick up an object
-        elif action == self.actions.pickup:
-            # Position at which we will test for an intersection
+        if action[self.actions.pickup] > 0.5:
             test_pos = self.agent.pos + self.agent.dir_vec * 1.5 * self.agent.radius
             ent = self.intersect(self.agent, test_pos, 1.2 * self.agent.radius)
-            if not self.agent.carrying:
-                if isinstance(ent, Entity):
-                    if not ent.is_static:
-                        self.agent.carrying = ent
+            if not self.agent.carrying and isinstance(ent, Entity) and not ent.is_static:
+                self.agent.carrying = ent
 
-        # Drop an object being carried
-        elif action == self.actions.drop:
-            if self.agent.carrying:
-                self.agent.carrying.pos[1] = 0
-                self.agent.carrying = None
-
-        # If we are carrying an object, update its position as we move
-        if self.agent.carrying:
-            ent_pos = self._get_carry_pos(self.agent.pos, self.agent.carrying)
-            self.agent.carrying.pos = ent_pos
-            self.agent.carrying.dir = self.agent.dir
+        if action[self.actions.drop] > 0.5 and self.agent.carrying:
+            self.agent.carrying.pos[1] = 0
+            self.agent.carrying = None
 
         # Generate the current camera image
         obs = self.render_obs()
