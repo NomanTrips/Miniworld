@@ -502,6 +502,20 @@ class Agent(Entity):
 
         return dir
 
+    @property
+    def cam_up(self):
+        """
+        Camera up vector accounting for current pitch and yaw.
+        """
+
+        rot_z = gen_rot_matrix(Z_VEC, self.cam_pitch * math.pi / 180)
+        rot_y = gen_rot_matrix(Y_VEC, self.dir)
+
+        up = np.dot(Y_VEC, rot_z)
+        up = np.dot(up, rot_y)
+
+        return up / np.linalg.norm(up)
+
     def randomize(self, params, rng):
         params.sample_many(
             rng,
