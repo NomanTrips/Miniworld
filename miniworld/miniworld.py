@@ -594,7 +594,18 @@ class MiniWorldEnv(gym.Env):
         obs = self.render_obs()
 
         # Return first observation
-        return obs, {}
+        return obs, {"agent": self._get_agent_state()}
+
+    def _get_agent_state(self):
+        """
+        Current agent state useful for debugging and external consumers.
+        """
+
+        return {
+            "pos": np.array(self.agent.pos, dtype=float),
+            "dir": float(self.agent.dir),
+            "cam_pitch": float(self.agent.cam_pitch),
+        }
 
     def _get_carry_pos(self, agent_pos, ent):
         """
@@ -711,13 +722,13 @@ class MiniWorldEnv(gym.Env):
             termination = False
             truncation = True
             reward = 0
-            return obs, reward, termination, truncation, {}
+            return obs, reward, termination, truncation, {"agent": self._get_agent_state()}
 
         reward = 0
         termination = False
         truncation = False
 
-        return obs, reward, termination, truncation, {}
+        return obs, reward, termination, truncation, {"agent": self._get_agent_state()}
 
     def add_rect_room(self, min_x, max_x, min_z, max_z, **kwargs):
         """
@@ -1197,15 +1208,14 @@ class MiniWorldEnv(gym.Env):
         # Setup the camera
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
+        up = self.agent.cam_up
         gluLookAt(
             # Eye position
             *self.agent.cam_pos,
             # Target
             *(self.agent.cam_pos + self.agent.cam_dir),
             # Up vector
-            0,
-            1.0,
-            0.0,
+            *up,
         )
 
         return self._render_world(frame_buffer, render_agent=False)
@@ -1265,15 +1275,14 @@ class MiniWorldEnv(gym.Env):
         # Setup the cameravisible objects
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
+        up = self.agent.cam_up
         gluLookAt(
             # Eye position
             *self.agent.cam_pos,
             # Target
             *(self.agent.cam_pos + self.agent.cam_dir),
             # Up vector
-            0,
-            1.0,
-            0.0,
+            *up,
         )
 
         # Render the rooms, without texturing
@@ -1412,9 +1421,10 @@ class MiniWorldEnv(gym.Env):
         )
 
         # Draw the text label in the window
-        self.text_label.text = "pos: (%.2f, %.2f, %.2f)\nangle: %d\nsteps: %d" % (
+        self.text_label.text = "pos: (%.2f, %.2f, %.2f)\nangle: %d\npitch: %d\nsteps: %d" % (
             *self.agent.pos,
             int(self.agent.dir * 180 / math.pi) % 360,
+            int(self.agent.cam_pitch),
             self.step_count,
         )
         self.text_label.draw()
