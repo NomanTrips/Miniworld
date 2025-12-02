@@ -54,7 +54,7 @@ class StochasticActionWrapper(gym.ActionWrapper):
     Else, a random action is sampled from the action space.
     """
 
-    def __init__(self, env, prob: float = 0.9, random_action: Optional[int] = None):
+    def __init__(self, env, prob: float = 0.9, random_action: Optional[np.ndarray] = None):
         super().__init__(env)
 
         self.prob = prob
@@ -64,8 +64,6 @@ class StochasticActionWrapper(gym.ActionWrapper):
         """ """
         if self.np_random.uniform() < self.prob:
             return action
-        else:
-            if self.random_action is None:
-                return self.np_random.integers(0, 6)
-            else:
-                return self.random_action
+        if self.random_action is None:
+            return self.action_space.sample()
+        return self.random_action
