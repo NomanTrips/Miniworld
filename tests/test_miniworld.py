@@ -21,7 +21,7 @@ def test_miniworld():
 
     env.reset()
     # Try stepping a few times
-    zero_action = np.zeros(env.action_space.shape, dtype=np.float32)
+    zero_action = np.zeros(len(env.unwrapped.actions), dtype=np.float32)
     for i in range(0, 10):
         obs, _, _, _, _ = env.step(zero_action)
 
@@ -46,7 +46,7 @@ def test_pytorch_wrapper():
     # Test the PyTorch observation wrapper
     env = PyTorchObsWrapper(env)
     first_obs, info = env.reset()
-    second_obs, _, _, _, _ = env.step(np.zeros(env.action_space.shape, dtype=np.float32))
+    second_obs, _, _, _, _ = env.step(np.zeros(len(env.unwrapped.actions), dtype=np.float32))
     assert first_obs.shape == env.observation_space.shape
     assert first_obs.shape == second_obs.shape
 
@@ -58,14 +58,16 @@ def test_stochastic_wrapper():
     # Test the stochastic action wrapper
     env = StochasticActionWrapper(env, prob=0.9)
     _, _ = env.reset()
-    _, _, _, _, _ = env.step(np.zeros(env.action_space.shape, dtype=np.float32))
+    _, _, _, _, _ = env.step(np.zeros(len(env.unwrapped.actions), dtype=np.float32))
     env.close()
 
     env = StochasticActionWrapper(
-        env, prob=0.9, random_action=np.zeros(env.action_space.shape, dtype=np.float32)
+        env,
+        prob=0.9,
+        random_action=np.zeros(len(env.unwrapped.actions), dtype=np.float32),
     )
     _, _ = env.reset()
-    _, _, _, _, _ = env.step(np.zeros(env.action_space.shape, dtype=np.float32))
+    _, _, _, _, _ = env.step(np.zeros(len(env.unwrapped.actions), dtype=np.float32))
     env.close()
 
 
@@ -91,7 +93,7 @@ def test_collision_detection():
     for _ in range(30):
         env.reset()
         room = env.rooms[0]
-        forward_action = np.zeros(env.action_space.shape, dtype=np.float32)
+        forward_action = np.zeros(len(env.actions), dtype=np.float32)
         forward_action[env.actions.forward_speed] = 1.0
         for _ in range(30):
             env.step(forward_action)
