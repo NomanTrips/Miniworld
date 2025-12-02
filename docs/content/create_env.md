@@ -11,11 +11,16 @@ def __init__(self, size=10, **kwargs):
 
     super().__init__(self, **kwargs)
 
-    # Allow only the movement actions
-    self.action_space = spaces.Discrete(self.actions.move_forward + 1)
+    # Continuous actions for forward/strafe speeds, yaw/pitch deltas, pickup, drop
+    # Each component is expected to be in the range [-1, 1].
+    self.action_space = spaces.Box(
+        low=np.array([-1.0, -1.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32),
+        high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+        dtype=np.float32,
+    )
 ```
 
-First, we need to create a class the inherits from `MiniWorldEnv`, we call our class `SimpleEnv`. Then, we define the action space to be only consisting of turn left (0), turn right (1), move forward (2), and move backward (3).
+First, we need to create a class that inherits from `MiniWorldEnv`; we call our class `SimpleEnv`. The default MiniWorld action space is a 6-D vector: forward speed, strafe speed, yaw delta, pitch delta, pickup flag, and drop flag. Movement and orientation values are normalized to `[-1, 1]`, and pitch is clamped internally to `[-89, 89]` degrees to keep the camera stable.
 
 ## Generate the walls
 

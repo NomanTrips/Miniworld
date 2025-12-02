@@ -96,6 +96,30 @@ See the list of [available environments](docs/environments.md) for more informat
 ./manual_control.py --env-name MiniWorld-Hallway-v0 --top_view
 ```
 
+### Action space and controls
+
+All MiniWorld environments expose a 6-D continuous action vector `[forward_speed, strafe_speed, yaw_delta, pitch_delta, pickup, drop]`.
+Values are expected to be in the range `[-1, 1]` and are scaled internally using the environment's motion parameters.
+The camera pitch is clamped to `[-89, 89]` degrees, and the default manual controller applies mouse input with a sensitivity of `0.0025` per pixel to both yaw and pitch updates before the environment scaling is applied.
+
+```python
+import gymnasium as gym
+import numpy as np
+
+env = gym.make("MiniWorld-Hallway-v0", render_mode="rgb_array")
+action = np.zeros(len(env.unwrapped.actions), dtype=np.float32)
+action[env.unwrapped.actions.forward_speed] = 0.75  # move forward
+action[env.unwrapped.actions.turn_delta] = 0.25     # gentle yaw change
+action[env.unwrapped.actions.pitch_delta] = -0.1    # look slightly down
+
+obs, info = env.reset()
+obs, reward, terminated, truncated, info = env.step(action)
+
+env.close()
+```
+
+The snippet above is the minimal end-to-end example for continuous movement and mouse-look: it creates an environment, issues a single normalized action that moves forward while turning and pitching the camera, and then closes the environment. You can plug the same action structure into rollout loops or adapt it for `scripts/manual_control.py`, which binds the keyboard arrows/WASD for movement and uses the mouse for yaw/pitch while respecting the same sensitivity and pitch limits.
+
 There is also a script to run automated tests (`run_tests.py`) and a script to gather performance metrics (`benchmark.py`).
 
 ### Offscreen Rendering (Clusters and Colab)
