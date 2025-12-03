@@ -120,7 +120,7 @@ class ManualControl:
             turn_input = float(self.key_handler[key.RIGHT]) - float(
                 self.key_handler[key.LEFT]
             )
-            turn_input += self.mouse_dx * self.turn_sensitivity
+            turn_input += -self.mouse_dx * self.turn_sensitivity
             pitch_input = self.mouse_dy * self.pitch_sensitivity
 
             action[self.env.actions.turn_delta] = turn_input
