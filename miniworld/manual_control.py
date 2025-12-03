@@ -55,6 +55,9 @@ class ManualControl:
             control the simulation
             """
 
+            # Update key state tracking so held keys are captured.
+            self.key_handler.on_key_press(symbol, modifiers)
+
             if symbol == key.BACKSPACE or symbol == key.SLASH:
                 print("RESET")
                 self.env.reset()
@@ -73,7 +76,8 @@ class ManualControl:
 
         @env.unwrapped.window.event
         def on_key_release(symbol, modifiers):
-            pass
+            # Keep KeyStateHandler in sync with released keys.
+            self.key_handler.on_key_release(symbol, modifiers)
 
         @env.unwrapped.window.event
         def on_mouse_motion(x, y, dx, dy):
