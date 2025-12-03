@@ -1,4 +1,5 @@
 import math
+from typing import Optional, Tuple
 
 import numpy as np
 import pyglet
@@ -13,6 +14,8 @@ class ManualControl:
         no_time_limit: bool,
         domain_rand: bool,
         mouse_sensitivity: float = 0.0025,
+        fullscreen: bool = False,
+        window_size: Optional[str] = None,
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -29,17 +32,42 @@ class ManualControl:
         self.turn_sensitivity = mouse_sensitivity
         self.pitch_sensitivity = mouse_sensitivity
 
+        self._fullscreen = fullscreen
+        self._mouse_exclusive = True
+        self._window_size: Optional[Tuple[int, int]] = None
+        if window_size is not None:
+            self._window_size = self._parse_window_size(window_size)
+
+        self._windowed_size: Optional[Tuple[int, int]] = None
+
         if no_time_limit:
             self.env.max_episode_steps = math.inf
         if domain_rand:
             self.env.domain_rand = True
+
+    @staticmethod
+    def _parse_window_size(window_size: str):
+        try:
+            width_str, height_str = window_size.lower().split("x", maxsplit=1)
+            width, height = int(width_str), int(height_str)
+        except Exception as exc:  # pragma: no cover - user input parsing
+            raise ValueError(
+                "Window size must be provided as WIDTHxHEIGHT (e.g., 1920x1080)."
+            ) from exc
+
+        if width <= 0 or height <= 0:
+            raise ValueError("Window dimensions must be positive integers.")
+
+        return width, height
 
     def run(self):
         print("============")
         print("Instructions")
         print("============")
         print(
-            "move: arrow keys (mouse to look)\nstrafe: A/D\npickup: P\ndrop: B\nquit: ESC"
+            "move: arrow keys (mouse to look)\n"
+            "strafe: A/D\npickup: P\ndrop: B\n"
+            "toggle fullscreen: F11\nquit: ESC"
         )
         print("============")
 
@@ -52,7 +80,16 @@ class ManualControl:
 
         window = env.unwrapped.window
         window.push_handlers(self.key_handler)
-        window.set_exclusive_mouse(True)
+        window.set_exclusive_mouse(self._mouse_exclusive)
+
+        if self._fullscreen:
+            window.set_fullscreen(True)
+        elif self._window_size is not None:
+            width, height = self._window_size
+            window.set_size(width, height)
+
+        window.set_exclusive_mouse(self._mouse_exclusive)
+        self._windowed_size = (window.width, window.height)
 
         @env.unwrapped.window.event
         def on_key_press(symbol, modifiers):
@@ -79,6 +116,8 @@ class ManualControl:
                 self.drop_requested = True
             elif symbol == key.ENTER:
                 pyglet.app.exit()
+            elif symbol == key.F11:
+                self._toggle_fullscreen()
 
         @env.unwrapped.window.event
         def on_key_release(symbol, modifiers):
@@ -181,6 +220,28 @@ class ManualControl:
             self.env.reset()
 
         self.env.render()
+
+    def _toggle_fullscreen(self):
+        window = self.env.unwrapped.window
+
+        if window is None:
+            return
+
+        target_fullscreen = not window.fullscreen
+
+        if target_fullscreen:
+            self._windowed_size = (window.width, window.height)
+            window.set_fullscreen(True)
+        else:
+            window.set_fullscreen(False)
+
+            restore_size = self._window_size or self._windowed_size
+            if restore_size is not None:
+                width, height = restore_size
+                window.set_size(width, height)
+
+        window.set_exclusive_mouse(self._mouse_exclusive)
+        self._fullscreen = window.fullscreen
 
     def _get_box_action_space(self):
         action_space = getattr(self.env, "action_space", None)

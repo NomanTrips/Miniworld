@@ -94,6 +94,10 @@ See the list of [available environments](docs/environments.md) for more informat
 
 # Display an overhead view of the environment
 ./manual_control.py --env-name MiniWorld-Hallway-v0 --top_view
+
+# Launch in fullscreen or target a specific window size
+./manual_control.py --env-name MiniWorld-Hallway-v0 --fullscreen
+./manual_control.py --env-name MiniWorld-Hallway-v0 --window-size 1920x1080
 ```
 
 ### Action space and controls
@@ -119,6 +123,8 @@ env.close()
 ```
 
 The snippet above is the minimal end-to-end example for continuous movement and mouse-look: it creates an environment, issues a single normalized action that moves forward while turning and pitching the camera, and then closes the environment. You can plug the same action structure into rollout loops or adapt it for `scripts/manual_control.py`, which binds the keyboard arrows/WASD for movement and uses the mouse for yaw/pitch while respecting the same sensitivity and pitch limits.
+
+While running `scripts/manual_control.py` you can toggle fullscreen at any time with **F11**; the viewer will remember the previous windowed size and keep the mouse cursor captured in both modes.
 
 There is also a script to run automated tests (`run_tests.py`) and a script to gather performance metrics (`benchmark.py`).
 

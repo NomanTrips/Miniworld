@@ -33,6 +33,20 @@ def main():
         default=0.0025,
         help="mouse sensitivity for yaw and pitch updates",
     )
+    parser.add_argument(
+        "--fullscreen",
+        action="store_true",
+        help="start the viewer in fullscreen mode",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=str,
+        default=None,
+        help=(
+            "set the initial window size as WIDTHxHEIGHT (e.g., 1920x1080); "
+            "ignored when --fullscreen is set"
+        ),
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -46,6 +60,8 @@ def main():
         args.no_time_limit,
         args.domain_rand,
         mouse_sensitivity=args.mouse_sensitivity,
+        fullscreen=args.fullscreen,
+        window_size=args.window_size,
     )
     manual_control.run()
 
