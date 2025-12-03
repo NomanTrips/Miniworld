@@ -756,7 +756,8 @@ class MiniWorldEnv(gym.Env):
             raise ValueError(
                 f"Action should have shape {(len(self.actions),)}, got {action.shape}"
             )
-        action = np.clip(action, self.action_space.low, self.action_space.high)
+        if isinstance(self.action_space, spaces.Box):
+            action = np.clip(action, self.action_space.low, self.action_space.high)
 
         yaw_delta = action[self.actions.turn_delta] * turn_step * math.pi / 180
         pitch_delta = action[self.actions.pitch_delta] * turn_step
