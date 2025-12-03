@@ -624,12 +624,15 @@ class MiniWorldEnv(gym.Env):
         return action
 
     def _default_discrete_actions(self):
-        """Standard left/right/forward discrete controls."""
+        """Standard turn/move discrete controls including strafing."""
 
         return [
             self._action_from_components(turn=-1.0),
             self._action_from_components(turn=1.0),
             self._action_from_components(forward=1.0),
+            self._action_from_components(forward=-1.0),
+            self._action_from_components(strafe=-1.0),
+            self._action_from_components(strafe=1.0),
         ]
 
     def set_discrete_actions(self, actions=None):
