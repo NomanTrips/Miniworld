@@ -7,7 +7,13 @@ from pyglet.window import key
 
 
 class ManualControl:
-    def __init__(self, env, no_time_limit: bool, domain_rand: bool):
+    def __init__(
+        self,
+        env,
+        no_time_limit: bool,
+        domain_rand: bool,
+        mouse_sensitivity: float = 0.0025,
+    ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
         self._discrete_actions = self._get_discrete_actions()
@@ -20,8 +26,8 @@ class ManualControl:
         self.drop_requested = False
 
         # Mouse sensitivity factors for yaw/pitch updates
-        self.turn_sensitivity = 0.0025
-        self.pitch_sensitivity = 0.0025
+        self.turn_sensitivity = mouse_sensitivity
+        self.pitch_sensitivity = mouse_sensitivity
 
         if no_time_limit:
             self.env.max_episode_steps = math.inf

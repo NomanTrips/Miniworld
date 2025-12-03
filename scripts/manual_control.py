@@ -27,6 +27,12 @@ def main():
         action="store_true",
         help="show the top view instead of the agent view",
     )
+    parser.add_argument(
+        "--mouse-sensitivity",
+        type=float,
+        default=0.0025,
+        help="mouse sensitivity for yaw and pitch updates",
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -35,7 +41,12 @@ def main():
 
     print(f"Miniworld v{miniworld_version}, Env: {args.env_name}")
 
-    manual_control = ManualControl(env, args.no_time_limit, args.domain_rand)
+    manual_control = ManualControl(
+        env,
+        args.no_time_limit,
+        args.domain_rand,
+        mouse_sensitivity=args.mouse_sensitivity,
+    )
     manual_control.run()
 
 
