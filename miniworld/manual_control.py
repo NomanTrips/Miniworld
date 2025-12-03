@@ -194,6 +194,8 @@ class ManualControl:
     def _build_discrete_action_lookup(self):
         action_map = {}
 
+        has_pitch = False
+
         for idx, action in enumerate(self._discrete_actions):
             if action[self.env.actions.forward_speed] > 0:
                 action_map.setdefault("forward", idx)
@@ -209,12 +211,17 @@ class ManualControl:
                 action_map.setdefault("turn_left", idx)
             if action[self.env.actions.pitch_delta] > 0:
                 action_map.setdefault("pitch_up", idx)
+                has_pitch = True
             if action[self.env.actions.pitch_delta] < 0:
                 action_map.setdefault("pitch_down", idx)
+                has_pitch = True
             if action[self.env.actions.pickup] > 0.5:
                 action_map.setdefault("pickup", idx)
             if action[self.env.actions.drop] > 0.5:
                 action_map.setdefault("drop", idx)
+
+        # Remember whether the discrete space can represent pitch updates.
+        self._has_discrete_pitch = has_pitch
 
         return action_map
 
@@ -232,6 +239,12 @@ class ManualControl:
 
     def _map_to_discrete_index(self, action):
         inputs = []
+
+        pitch = action[self.env.actions.pitch_delta]
+        if pitch != 0 and not self._has_discrete_pitch:
+            self._apply_discrete_pitch_update(pitch)
+            action = np.array(action, copy=True)
+            action[self.env.actions.pitch_delta] = 0.0
 
         if action[self.env.actions.pickup] > 0.5 and "pickup" in self._discrete_action_map:
             inputs.append(("pickup", action[self.env.actions.pickup]))
@@ -267,6 +280,11 @@ class ManualControl:
 
         action_name, _ = max(inputs, key=lambda entry: abs(entry[1]))
         return self._discrete_action_map[action_name]
+
+    def _apply_discrete_pitch_update(self, pitch_delta):
+        rand = self.env.np_random if self.env.domain_rand else None
+        turn_step = self.env.params.sample(rand, "turn_step")
+        self.env.unwrapped._update_agent_orientation(0.0, pitch_delta * turn_step)
 
     def _describe_action_vector(self, action):
         return (
