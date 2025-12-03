@@ -98,7 +98,10 @@ class ManualControl:
 
             # Keyboard state-based movement
             action[self.env.actions.forward_speed] = (
-                float(self.key_handler[key.UP]) - float(self.key_handler[key.DOWN])
+                float(self.key_handler[key.UP])
+                + float(self.key_handler[key.W])
+                - float(self.key_handler[key.DOWN])
+                - float(self.key_handler[key.S])
             )
             action[self.env.actions.strafe_speed] = (
                 float(self.key_handler[key.D]) - float(self.key_handler[key.A])
