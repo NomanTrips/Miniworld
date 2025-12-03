@@ -14,6 +14,7 @@ class ManualControl:
         no_time_limit: bool,
         domain_rand: bool,
         mouse_sensitivity: float = 0.0025,
+        mouse_rotation_deadzone: float = 0.05,
         fullscreen: bool = False,
         window_size: Optional[str] = None,
     ):
@@ -31,6 +32,10 @@ class ManualControl:
         # Mouse sensitivity factors for yaw/pitch updates
         self.turn_sensitivity = mouse_sensitivity
         self.pitch_sensitivity = mouse_sensitivity
+        self.mouse_rotation_deadzone = mouse_rotation_deadzone
+
+        self._last_mouse_turn_delta = 0.0
+        self._last_mouse_pitch_delta = 0.0
 
         self._fullscreen = fullscreen
         self._mouse_exclusive = True
@@ -159,8 +164,14 @@ class ManualControl:
             turn_input = float(self.key_handler[key.RIGHT]) - float(
                 self.key_handler[key.LEFT]
             )
-            turn_input += -self.mouse_dx * self.turn_sensitivity
-            pitch_input = self.mouse_dy * self.pitch_sensitivity
+            mouse_turn_delta = -self.mouse_dx * self.turn_sensitivity
+            mouse_pitch_delta = self.mouse_dy * self.pitch_sensitivity
+
+            self._last_mouse_turn_delta = mouse_turn_delta
+            self._last_mouse_pitch_delta = mouse_pitch_delta
+
+            turn_input += mouse_turn_delta
+            pitch_input = mouse_pitch_delta
 
             action[self.env.actions.turn_delta] = turn_input
             action[self.env.actions.pitch_delta] = pitch_input
@@ -312,12 +323,14 @@ class ManualControl:
         return None
 
     def _map_to_discrete_index(self, action):
+        action = np.array(action, copy=True)
         inputs = []
+
+        self._apply_mouse_rotation_updates(action)
 
         pitch = action[self.env.actions.pitch_delta]
         if pitch != 0 and not self._has_discrete_pitch:
             self._apply_discrete_pitch_update(pitch)
-            action = np.array(action, copy=True)
             action[self.env.actions.pitch_delta] = 0.0
 
         if action[self.env.actions.pickup] > 0.5 and "pickup" in self._discrete_action_map:
@@ -354,6 +367,39 @@ class ManualControl:
 
         action_name, _ = max(inputs, key=lambda entry: abs(entry[1]))
         return self._discrete_action_map[action_name]
+
+    def _apply_mouse_rotation_updates(self, action):
+        def apply_with_deadzone(delta, mouse_delta, update_fn):
+            if mouse_delta == 0.0:
+                return delta
+
+            # Remove the mouse-derived portion from downstream discrete mapping.
+            remaining_delta = delta - mouse_delta
+
+            if abs(mouse_delta) < self.mouse_rotation_deadzone:
+                return remaining_delta
+
+            update_fn(mouse_delta)
+            return remaining_delta
+
+        turn_idx = self.env.actions.turn_delta
+        pitch_idx = self.env.actions.pitch_delta
+
+        action[turn_idx] = apply_with_deadzone(
+            action[turn_idx], self._last_mouse_turn_delta, self._apply_fractional_turn_update
+        )
+
+        action[pitch_idx] = apply_with_deadzone(
+            action[pitch_idx],
+            self._last_mouse_pitch_delta,
+            self._apply_discrete_pitch_update,
+        )
+
+    def _apply_fractional_turn_update(self, turn_delta):
+        rand = self.env.np_random if self.env.domain_rand else None
+        turn_step = self.env.params.sample(rand, "turn_step")
+        yaw_delta = turn_delta * turn_step * math.pi / 180
+        self.env.unwrapped._update_agent_orientation(yaw_delta, 0.0)
 
     def _apply_discrete_pitch_update(self, pitch_delta):
         rand = self.env.np_random if self.env.domain_rand else None
