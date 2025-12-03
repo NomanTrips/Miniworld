@@ -33,7 +33,7 @@ class ManualControl:
         print("Instructions")
         print("============")
         print(
-            "move: arrow keys (mouse to look)\nstrafe: A/D\npickup: P\ndrop: D\nquit: ESC"
+            "move: arrow keys (mouse to look)\nstrafe: A/D\npickup: P\ndrop: B\nquit: ESC"
         )
         print("============")
 
@@ -66,7 +66,7 @@ class ManualControl:
 
             if symbol == key.PAGEUP or symbol == key.P:
                 self.pickup_requested = True
-            elif symbol == key.PAGEDOWN or symbol == key.D:
+            elif symbol == key.PAGEDOWN or symbol == key.B:
                 self.drop_requested = True
             elif symbol == key.ENTER:
                 pyglet.app.exit()
