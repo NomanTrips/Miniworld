@@ -47,10 +47,20 @@ def main():
             "ignored when --fullscreen is set"
         ),
     )
+    parser.add_argument(
+        "--hide-hud",
+        action="store_true",
+        help="run the viewer without the HUD overlay (cleaner recordings)",
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
-    env = gym.make(args.env_name, view=view_mode, render_mode="human")
+    env = gym.make(
+        args.env_name,
+        view=view_mode,
+        render_mode="human",
+        show_hud=not args.hide_hud,
+    )
     miniworld_version = miniworld.__version__
 
     print(f"Miniworld v{miniworld_version}, Env: {args.env_name}")
