@@ -8,7 +8,7 @@ import pyglet
 from gymnasium import spaces
 from pyglet.window import key
 
-from miniworld.lerobot_writer import DatasetManager, EpisodeWriter
+from miniworld.lerobot_writer import DatasetManager, EpisodeWriter, build_state_vector
 
 
 class ManualControl:
@@ -214,7 +214,14 @@ class ManualControl:
 
             if action_to_take is None:
                 self.env.render()
-                self._record_frame_if_needed(action)
+                idle_info = {"agent": self.env.unwrapped._get_agent_state()}
+                idle_frame = self.env.render_obs()
+                self._record_frame_if_needed(
+                    action,
+                    frame=idle_frame,
+                    info=idle_info,
+                    timestamp=time.time(),
+                )
                 return
 
             if isinstance(action_to_take, np.ndarray) and self._box_action_space is not None:
@@ -224,7 +231,6 @@ class ManualControl:
                     self._box_action_space.high,
                 )
 
-            self._record_frame_if_needed(action_to_take)
             self.step(action_to_take)
 
         pyglet.clock.schedule_interval(update, 1.0 / 60.0)
@@ -250,6 +256,12 @@ class ManualControl:
         )
 
         obs, reward, termination, truncation, info = self.env.step(action)
+
+        self._record_frame_if_needed(
+            action,
+            frame=obs,
+            info=info,
+        )
 
         if reward > 0:
             print(f"reward={reward:.2f}")
@@ -309,25 +321,30 @@ class ManualControl:
         self._episode_index += 1
         self._episode_writer = None
 
-    def _record_frame_if_needed(self, action):
+    def _record_frame_if_needed(self, action, *, frame=None, info=None, timestamp=None):
         if self._episode_writer is None:
             return
 
-        if isinstance(action, np.ndarray):
-            action_vector = np.array(action, dtype=np.float32)
-        elif isinstance(self.env.action_space, spaces.Discrete):
-            action_vector = self._discrete_actions[int(action)]
-        else:
-            action_vector = np.array([action], dtype=np.float32)
+        action_vector = self._normalize_action(action)
+        frame = frame if frame is not None else self.env.render_obs()
+        info = info or {"agent": self.env.unwrapped._get_agent_state()}
+        state = build_state_vector(info)
 
-        frame = self.env.render_obs()
         self._episode_writer.add_sample(
             frame=frame,
             action=action_vector,
+            state=state,
             frame_index=self._frame_index,
-            timestamp=time.time(),
+            timestamp=time.time() if timestamp is None else timestamp,
         )
         self._frame_index += 1
+
+    def _normalize_action(self, action):
+        if isinstance(action, np.ndarray):
+            return np.array(action, dtype=np.float32)
+        if isinstance(self.env.action_space, spaces.Discrete):
+            return np.array(self._discrete_actions[int(action)], dtype=np.float32)
+        return np.array([action], dtype=np.float32)
 
     def _recenter_mouse_cursor(self, window):
         if not self._mouse_exclusive or window is None:

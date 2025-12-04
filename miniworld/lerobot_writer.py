@@ -29,12 +29,63 @@ FEATURE_SCHEMA = {
     "video_frame_index": {"dtype": "int64"},
     "video_path": {"dtype": "string"},
     "action": {"dtype": "float32", "shape": ["action_dim"]},
-    "state": {"dtype": "float32", "shape": ["state_dim"], "optional": True},
+    "state": {
+        "dtype": "float32",
+        "shape": ["state_dim"],
+        "optional": True,
+        "description": (
+            "[pos_x, pos_y, pos_z, yaw, pitch] followed by any task-specific "
+            "scalars or vectors sorted by their info dict keys and flattened in "
+            "C-order to keep observation.state deterministic."
+        ),
+    },
     "image": {
         "dtype": "uint8",
         "description": "RGB frames stored in the accompanying chunked video files.",
     },
 }
+
+
+def build_state_vector(info: Optional[Dict[str, object]]) -> Optional[np.ndarray]:
+    """
+    Flatten ``info`` into a deterministic observation.state vector.
+
+    The output always begins with the agent pose from ``info["agent"]`` in the order
+    ``[pos_x, pos_y, pos_z, yaw, pitch]``. Any additional scalar or vector entries in
+    ``info`` (excluding the ``"agent"`` key) are appended next, sorted by key and
+    flattened in C-order. If ``info`` is ``None`` or lacks the ``"agent"`` entry,
+    ``None`` is returned so the caller can skip optional state logging.
+    """
+
+    if info is None:
+        return None
+
+    agent_info = info.get("agent")
+    if agent_info is None:
+        return None
+
+    pos = np.asarray(agent_info.get("pos"), dtype=np.float32).reshape(-1)
+    if pos.size < 3:
+        return None
+
+    yaw = float(np.asarray(agent_info.get("dir"), dtype=np.float32).reshape(-1)[0])
+    pitch = float(
+        np.asarray(agent_info.get("cam_pitch"), dtype=np.float32).reshape(-1)[0]
+    )
+
+    state_parts: List[float] = [
+        float(pos[0]),
+        float(pos[1]),
+        float(pos[2]),
+        yaw,
+        pitch,
+    ]
+
+    extras = {key: value for key, value in info.items() if key != "agent"}
+    for key in sorted(extras):
+        state_parts.extend(np.asarray(extras[key], dtype=np.float32).ravel().tolist())
+
+    return np.asarray(state_parts, dtype=np.float32)
 
 
 @dataclass
