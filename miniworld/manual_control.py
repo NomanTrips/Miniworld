@@ -1,10 +1,70 @@
+import json
 import math
+import time
+from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
 import pyglet
 from gymnasium import spaces
 from pyglet.window import key
+
+
+class EpisodeWriter:
+    """Minimal episode writer for manual control recordings."""
+
+    def __init__(self, output_dir: Path, episode_index: int):
+        self.episode_index = episode_index
+        self.episode_dir = Path(output_dir) / f"episode_{episode_index:04d}"
+        self.episode_dir.mkdir(parents=True, exist_ok=True)
+
+        self._frames = []
+        self._actions = []
+        self._timestamps = []
+        self._frame_indices = []
+        self._closed = False
+        self._started_at = time.time()
+
+    @property
+    def num_frames(self) -> int:
+        return len(self._frames)
+
+    def add_sample(self, *, frame, action, frame_index: int, timestamp: float):
+        if self._closed:
+            return
+
+        self._frames.append(np.array(frame, copy=True))
+        self._actions.append(np.array(action, dtype=np.float32))
+        self._frame_indices.append(frame_index)
+        self._timestamps.append(timestamp)
+
+    def close(self):
+        if self._closed:
+            return self.episode_dir
+
+        self._closed = True
+
+        if self._frames:
+            data_path = self.episode_dir / "episode_data.npz"
+            np.savez_compressed(
+                data_path,
+                frames=np.stack(self._frames),
+                actions=np.stack(self._actions),
+                frame_indices=np.asarray(self._frame_indices, dtype=np.int64),
+                timestamps=np.asarray(self._timestamps, dtype=np.float64),
+            )
+
+        metadata = {
+            "episode_index": self.episode_index,
+            "num_frames": len(self._frames),
+            "started_at": self._started_at,
+            "ended_at": time.time(),
+        }
+
+        metadata_path = self.episode_dir / "metadata.json"
+        metadata_path.write_text(json.dumps(metadata, indent=2))
+
+        return self.episode_dir
 
 
 class ManualControl:
@@ -50,6 +110,11 @@ class ManualControl:
             self.env.max_episode_steps = math.inf
         if domain_rand:
             self.env.domain_rand = True
+
+        self._episode_writer: Optional[EpisodeWriter] = None
+        self._episode_index: int = 0
+        self._frame_index: int = 0
+        self._recordings_dir = Path.cwd() / "episode_recordings"
 
     @staticmethod
     def _parse_window_size(window_size: str):
@@ -115,12 +180,15 @@ class ManualControl:
                 return
 
             if symbol == key.ESCAPE:
+                self._stop_episode_writer()
                 self.env.close()
 
             if symbol == key.PAGEUP or symbol == key.P:
                 self.pickup_requested = True
             elif symbol == key.PAGEDOWN or symbol == key.B:
                 self.drop_requested = True
+            elif symbol == key.SPACE:
+                self._toggle_episode_writer()
             elif symbol == key.ENTER:
                 pyglet.app.exit()
             elif symbol == key.F11:
@@ -155,6 +223,7 @@ class ManualControl:
 
         @env.unwrapped.window.event
         def on_close():
+            self._stop_episode_writer()
             pyglet.app.exit()
 
         def update(dt):
@@ -200,6 +269,7 @@ class ManualControl:
 
             if action_to_take is None:
                 self.env.render()
+                self._record_frame_if_needed(action)
                 return
 
             if isinstance(action_to_take, np.ndarray) and self._box_action_space is not None:
@@ -209,6 +279,7 @@ class ManualControl:
                     self._box_action_space.high,
                 )
 
+            self._record_frame_if_needed(action_to_take)
             self.step(action_to_take)
 
         pyglet.clock.schedule_interval(update, 1.0 / 60.0)
@@ -216,6 +287,7 @@ class ManualControl:
         # Enter main event loop
         pyglet.app.run()
 
+        self._stop_episode_writer()
         self.env.close()
 
     def step(self, action):
@@ -264,6 +336,52 @@ class ManualControl:
         window.set_exclusive_mouse(self._mouse_exclusive)
         self._fullscreen = window.fullscreen
         self._recenter_mouse_cursor(window)
+
+    def _toggle_episode_writer(self):
+        if self._episode_writer is None:
+            self._start_episode_writer()
+        else:
+            self._stop_episode_writer()
+
+    def _start_episode_writer(self):
+        self._frame_index = 0
+        self._episode_writer = EpisodeWriter(
+            self._recordings_dir, episode_index=self._episode_index
+        )
+        print(
+            f"[Recorder] Started recording episode {self._episode_index} in {self._episode_writer.episode_dir}"
+        )
+
+    def _stop_episode_writer(self):
+        if self._episode_writer is None:
+            return
+
+        episode_dir = self._episode_writer.close()
+        print(
+            f"[Recorder] Saved {self._episode_writer.num_frames} frames to {episode_dir}"
+        )
+        self._episode_index += 1
+        self._episode_writer = None
+
+    def _record_frame_if_needed(self, action):
+        if self._episode_writer is None:
+            return
+
+        if isinstance(action, np.ndarray):
+            action_vector = np.array(action, dtype=np.float32)
+        elif isinstance(self.env.action_space, spaces.Discrete):
+            action_vector = self._discrete_actions[int(action)]
+        else:
+            action_vector = np.array([action], dtype=np.float32)
+
+        frame = self.env.render_obs()
+        self._episode_writer.add_sample(
+            frame=frame,
+            action=action_vector,
+            frame_index=self._frame_index,
+            timestamp=time.time(),
+        )
+        self._frame_index += 1
 
     def _recenter_mouse_cursor(self, window):
         if not self._mouse_exclusive or window is None:
