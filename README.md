@@ -98,6 +98,9 @@ See the list of [available environments](docs/environments.md) for more informat
 # Launch in fullscreen or target a specific window size
 ./manual_control.py --env-name MiniWorld-Hallway-v0 --fullscreen
 ./manual_control.py --env-name MiniWorld-Hallway-v0 --window-size 1920x1080
+
+# Hide the HUD overlay for clean recordings
+./manual_control.py --env-name MiniWorld-Hallway-v0 --hide-hud
 ```
 
 ### Action space and controls

@@ -467,6 +467,7 @@ class MiniWorldEnv(gym.Env):
         domain_rand: bool = False,
         render_mode: Optional[str] = None,
         view: str = "agent",
+        show_hud: bool = True,
     ):
         # Action enumeration for this environment
         self.actions = MiniWorldEnv.Actions
@@ -522,19 +523,26 @@ class MiniWorldEnv(gym.Env):
         assert view in ["agent", "top"]
         self.view = view
 
+        # HUD visibility flag
+        self.show_hud = show_hud
+
         # Compute the observation display size
-        self.obs_disp_width = 256
-        self.obs_disp_height = obs_height * (self.obs_disp_width / obs_width)
+        self.obs_disp_width = 256 if self.show_hud else 0
+        self.obs_disp_height = (
+            obs_height * (self.obs_disp_width / obs_width) if self.show_hud else 0
+        )
 
         # For displaying text
-        self.text_label = pyglet.text.Label(
-            font_name="Arial",
-            font_size=14,
-            multiline=True,
-            width=400,
-            x=window_width + 5,
-            y=window_height - (self.obs_disp_height + 19),
-        )
+        self.text_label = None
+        if self.show_hud:
+            self.text_label = pyglet.text.Label(
+                font_name="Arial",
+                font_size=14,
+                multiline=True,
+                width=400,
+                x=window_width + 5,
+                y=window_height - (self.obs_disp_height + 19),
+            )
 
         # Initialize the state
         self.reset()
@@ -1426,13 +1434,15 @@ class MiniWorldEnv(gym.Env):
         if self.render_mode == "rgb_array":
             return img
 
-        # Render the agent's view
-        obs = self.render_obs()
-        obs_width = obs.shape[1]
-        obs_height = obs.shape[0]
-
         window_width = img_width + self.obs_disp_width
         window_height = img_height
+
+        obs = None
+        if self.show_hud:
+            # Render the agent's view
+            obs = self.render_obs()
+            obs_width = obs.shape[1]
+            obs_height = obs.shape[0]
 
         if self.window is None:
             config = pyglet.gl.Config(double_buffer=True)
@@ -1469,31 +1479,32 @@ class MiniWorldEnv(gym.Env):
         )
         img_data.blit(0, 0, 0, width=img_width, height=img_height)
 
-        # Draw the observation
-        obs = np.ascontiguousarray(np.flip(obs, axis=0))
-        obs_data = pyglet.image.ImageData(
-            obs_width,
-            obs_height,
-            "RGB",
-            obs.ctypes.data_as(POINTER(GLubyte)),
-            pitch=obs_width * 3,
-        )
-        obs_data.blit(
-            img_width,
-            img_height - self.obs_disp_height,
-            0,
-            width=self.obs_disp_width,
-            height=self.obs_disp_height,
-        )
+        if self.show_hud and obs is not None and self.text_label:
+            # Draw the observation
+            obs = np.ascontiguousarray(np.flip(obs, axis=0))
+            obs_data = pyglet.image.ImageData(
+                obs_width,
+                obs_height,
+                "RGB",
+                obs.ctypes.data_as(POINTER(GLubyte)),
+                pitch=obs_width * 3,
+            )
+            obs_data.blit(
+                img_width,
+                img_height - self.obs_disp_height,
+                0,
+                width=self.obs_disp_width,
+                height=self.obs_disp_height,
+            )
 
-        # Draw the text label in the window
-        self.text_label.text = "pos: (%.2f, %.2f, %.2f)\nangle: %d\npitch: %d\nsteps: %d" % (
-            *self.agent.pos,
-            int(self.agent.dir * 180 / math.pi) % 360,
-            int(self.agent.cam_pitch),
-            self.step_count,
-        )
-        self.text_label.draw()
+            # Draw the text label in the window
+            self.text_label.text = "pos: (%.2f, %.2f, %.2f)\nangle: %d\npitch: %d\nsteps: %d" % (
+                *self.agent.pos,
+                int(self.agent.dir * 180 / math.pi) % 360,
+                int(self.agent.cam_pitch),
+                self.step_count,
+            )
+            self.text_label.draw()
 
         # Force execution of queued commands
         glFlush()
