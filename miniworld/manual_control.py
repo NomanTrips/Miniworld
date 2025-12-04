@@ -1,4 +1,3 @@
-import json
 import math
 import time
 from pathlib import Path
@@ -9,62 +8,7 @@ import pyglet
 from gymnasium import spaces
 from pyglet.window import key
 
-
-class EpisodeWriter:
-    """Minimal episode writer for manual control recordings."""
-
-    def __init__(self, output_dir: Path, episode_index: int):
-        self.episode_index = episode_index
-        self.episode_dir = Path(output_dir) / f"episode_{episode_index:04d}"
-        self.episode_dir.mkdir(parents=True, exist_ok=True)
-
-        self._frames = []
-        self._actions = []
-        self._timestamps = []
-        self._frame_indices = []
-        self._closed = False
-        self._started_at = time.time()
-
-    @property
-    def num_frames(self) -> int:
-        return len(self._frames)
-
-    def add_sample(self, *, frame, action, frame_index: int, timestamp: float):
-        if self._closed:
-            return
-
-        self._frames.append(np.array(frame, copy=True))
-        self._actions.append(np.array(action, dtype=np.float32))
-        self._frame_indices.append(frame_index)
-        self._timestamps.append(timestamp)
-
-    def close(self):
-        if self._closed:
-            return self.episode_dir
-
-        self._closed = True
-
-        if self._frames:
-            data_path = self.episode_dir / "episode_data.npz"
-            np.savez_compressed(
-                data_path,
-                frames=np.stack(self._frames),
-                actions=np.stack(self._actions),
-                frame_indices=np.asarray(self._frame_indices, dtype=np.int64),
-                timestamps=np.asarray(self._timestamps, dtype=np.float64),
-            )
-
-        metadata = {
-            "episode_index": self.episode_index,
-            "num_frames": len(self._frames),
-            "started_at": self._started_at,
-            "ended_at": time.time(),
-        }
-
-        metadata_path = self.episode_dir / "metadata.json"
-        metadata_path.write_text(json.dumps(metadata, indent=2))
-
-        return self.episode_dir
+from miniworld.lerobot_writer import DatasetManager, EpisodeWriter
 
 
 class ManualControl:
@@ -115,6 +59,7 @@ class ManualControl:
         self._episode_index: int = 0
         self._frame_index: int = 0
         self._recordings_dir = Path.cwd() / "episode_recordings"
+        self._dataset_manager = DatasetManager(self._recordings_dir)
 
     @staticmethod
     def _parse_window_size(window_size: str):
@@ -289,6 +234,7 @@ class ManualControl:
 
         self._stop_episode_writer()
         self.env.close()
+        self._dataset_manager.finalize()
 
     def step(self, action):
         if isinstance(action, np.ndarray):
@@ -345,11 +291,11 @@ class ManualControl:
 
     def _start_episode_writer(self):
         self._frame_index = 0
-        self._episode_writer = EpisodeWriter(
-            self._recordings_dir, episode_index=self._episode_index
+        self._episode_writer = self._dataset_manager.create_episode_writer(
+            episode_index=self._episode_index
         )
         print(
-            f"[Recorder] Started recording episode {self._episode_index} in {self._episode_writer.episode_dir}"
+            f"[Recorder] Started recording episode {self._episode_index}"
         )
 
     def _stop_episode_writer(self):
