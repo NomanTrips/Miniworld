@@ -28,6 +28,7 @@ class ManualControl:
         self.mouse_dy = 0.0
         self.pickup_requested = False
         self.drop_requested = False
+        self._ignore_mouse_motion = False
 
         # Mouse sensitivity factors for yaw/pitch updates
         self.turn_sensitivity = mouse_sensitivity
@@ -95,6 +96,7 @@ class ManualControl:
 
         window.set_exclusive_mouse(self._mouse_exclusive)
         self._windowed_size = (window.width, window.height)
+        self._recenter_mouse_cursor(window)
 
         @env.unwrapped.window.event
         def on_key_press(symbol, modifiers):
@@ -131,13 +133,21 @@ class ManualControl:
 
         @env.unwrapped.window.event
         def on_mouse_motion(x, y, dx, dy):
+            if self._ignore_mouse_motion:
+                self._ignore_mouse_motion = False
+                return
             self.mouse_dx += dx
             self.mouse_dy += dy
+            self._recenter_mouse_cursor(window)
 
         @env.unwrapped.window.event
         def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
+            if self._ignore_mouse_motion:
+                self._ignore_mouse_motion = False
+                return
             self.mouse_dx += dx
             self.mouse_dy += dy
+            self._recenter_mouse_cursor(window)
 
         @env.unwrapped.window.event
         def on_draw():
@@ -253,6 +263,16 @@ class ManualControl:
 
         window.set_exclusive_mouse(self._mouse_exclusive)
         self._fullscreen = window.fullscreen
+        self._recenter_mouse_cursor(window)
+
+    def _recenter_mouse_cursor(self, window):
+        if not self._mouse_exclusive or window is None:
+            return
+
+        self._ignore_mouse_motion = True
+        center_x = window.width // 2
+        center_y = window.height // 2
+        window.set_mouse_position(center_x, center_y)
 
     def _get_box_action_space(self):
         action_space = getattr(self.env, "action_space", None)
