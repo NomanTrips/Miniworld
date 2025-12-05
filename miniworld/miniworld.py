@@ -1408,6 +1408,7 @@ class MiniWorldEnv(gym.Env):
     def close(self):
         if self.window:
             self.window.close()
+            self.window = None
         return
 
     def render(self):
@@ -1444,7 +1445,7 @@ class MiniWorldEnv(gym.Env):
             obs_width = obs.shape[1]
             obs_height = obs.shape[0]
 
-        if self.window is None:
+        if self.window is None or self.window.context is None:
             config = pyglet.gl.Config(double_buffer=True)
             self.window = pyglet.window.Window(
                 width=window_width, height=window_height, resizable=False, config=config
