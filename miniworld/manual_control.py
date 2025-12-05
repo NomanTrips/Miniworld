@@ -21,6 +21,7 @@ class ManualControl:
         mouse_rotation_deadzone: float = 0.05,
         fullscreen: bool = False,
         window_size: Optional[str] = None,
+        task_description: str = "Center and zoom on the target.",
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -59,7 +60,10 @@ class ManualControl:
         self._episode_index: int = 0
         self._frame_index: int = 0
         self._recordings_dir = Path.cwd() / "episode_recordings"
-        self._dataset_manager = DatasetManager(self._recordings_dir)
+        self._task_description = task_description
+        self._dataset_manager = DatasetManager(
+            self._recordings_dir, default_task=self._task_description
+        )
 
     @staticmethod
     def _parse_window_size(window_size: str):
@@ -304,7 +308,7 @@ class ManualControl:
     def _start_episode_writer(self):
         self._frame_index = 0
         self._episode_writer = self._dataset_manager.create_episode_writer(
-            episode_index=self._episode_index
+            episode_index=self._episode_index, tasks=[self._task_description]
         )
         print(
             f"[Recorder] Started recording episode {self._episode_index}"
