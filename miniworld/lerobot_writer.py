@@ -262,8 +262,11 @@ class DatasetManager:
         self.video_template = video_template
         self.default_task = default_task
 
-        self.data_dir = self.dataset_dir / Path(data_template).parent
-        self.video_dir = self.dataset_dir / Path(video_template).parent
+        sample_data_path = Path(data_template.format(chunk_index=0, file_index=0))
+        sample_video_path = Path(video_template.format(chunk_index=0, file_index=0))
+
+        self.data_dir = self.dataset_dir / sample_data_path.parent
+        self.video_dir = self.dataset_dir / sample_video_path.parent
         self.meta_dir = self.dataset_dir / "meta"
         self.episodes_dir = self.meta_dir / "episodes"
         self.data_dir.mkdir(parents=True, exist_ok=True)
