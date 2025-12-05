@@ -52,6 +52,12 @@ def main():
         action="store_true",
         help="run the viewer without the HUD overlay (cleaner recordings)",
     )
+    parser.add_argument(
+        "--task",
+        type=str,
+        default="Center and zoom on the target.",
+        help="short task description to record in tasks.parquet",
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -72,6 +78,7 @@ def main():
         mouse_sensitivity=args.mouse_sensitivity,
         fullscreen=args.fullscreen,
         window_size=args.window_size,
+        task_description=args.task,
     )
     manual_control.run()
 

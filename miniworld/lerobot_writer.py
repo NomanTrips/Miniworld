@@ -18,6 +18,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from miniworld import __version__
+
 
 FEATURE_SCHEMA = {
     "timestamp": {
@@ -160,9 +162,16 @@ class _StatsAggregator:
 class EpisodeWriter:
     """Collects per-episode samples before handing them to the dataset manager."""
 
-    def __init__(self, manager: "DatasetManager", episode_index: int) -> None:
+    def __init__(
+        self,
+        manager: "DatasetManager",
+        episode_index: int,
+        *,
+        tasks: Optional[Sequence[str]] = None,
+    ) -> None:
         self.manager = manager
         self.episode_index = episode_index
+        self.tasks = list(tasks) if tasks is not None else []
 
         self._frames: List[np.ndarray] = []
         self._actions: List[np.ndarray] = []
@@ -220,6 +229,7 @@ class EpisodeWriter:
             actions=self._actions,
             states=self._states,
             timestamps=self._timestamps,
+            tasks=self.tasks,
         )
         return self.manager.dataset_dir
 
@@ -237,10 +247,11 @@ class DatasetManager:
         self,
         dataset_dir: Path,
         *,
-        chunk_size: int = 512,
-        fps: int = 30,
-        data_template: str = "data/chunk_{chunk:06d}.parquet",
-        video_template: str = "videos/chunk_{chunk:06d}.mp4",
+        chunk_size: int = 1000,
+        fps: int = 10,
+        data_template: str = "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+        video_template: str = "videos/observation.image/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+        default_task: str = "Center and zoom on the target.",
     ) -> None:
         self.dataset_dir = Path(dataset_dir)
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -249,28 +260,41 @@ class DatasetManager:
         self.fps = fps
         self.data_template = data_template
         self.video_template = video_template
+        self.default_task = default_task
 
         self.data_dir = self.dataset_dir / Path(data_template).parent
         self.video_dir = self.dataset_dir / Path(video_template).parent
+        self.meta_dir = self.dataset_dir / "meta"
+        self.episodes_dir = self.meta_dir / "episodes"
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.video_dir.mkdir(parents=True, exist_ok=True)
+        self.episodes_dir.mkdir(parents=True, exist_ok=True)
 
         self._rows: List[Dict[str, object]] = []
         self._frames: List[np.ndarray] = []
         self._chunk_index: int = 0
         self._num_episodes: int = 0
         self._num_samples: int = 0
+        self._data_files: List[Path] = []
+        self._video_files: List[Path] = []
 
         self._stats = _StatsAggregator()
         self._action_dim: Optional[int] = None
         self._state_dim: Optional[int] = None
         self._frame_shape: Optional[Sequence[int]] = None
+        self._episodes_rows: List[Dict[str, object]] = []
+        self._tasks: Dict[str, int] = {}
 
-    def create_episode_writer(self, episode_index: Optional[int] = None) -> EpisodeWriter:
+    def create_episode_writer(
+        self, episode_index: Optional[int] = None, *, tasks: Optional[Sequence[str]] = None
+    ) -> EpisodeWriter:
         if episode_index is None:
             episode_index = self._num_episodes
         self._num_episodes = max(self._num_episodes, episode_index + 1)
-        return EpisodeWriter(self, episode_index)
+        resolved_tasks = list(tasks) if tasks is not None else []
+        if not resolved_tasks and self.default_task:
+            resolved_tasks = [self.default_task]
+        return EpisodeWriter(self, episode_index, tasks=resolved_tasks)
 
     def append_episode(
         self,
@@ -281,6 +305,7 @@ class DatasetManager:
         actions: Sequence[np.ndarray],
         states: Sequence[Optional[np.ndarray]],
         timestamps: Sequence[float],
+        tasks: Sequence[str],
     ) -> None:
         if not frames:
             return
@@ -293,16 +318,26 @@ class DatasetManager:
             first_state = next(state for state in states if state is not None)
             self._state_dim = int(np.asarray(first_state).size)
 
-        for frame_idx, frame, action, state, timestamp in zip(
-            frame_indices, frames, actions, states, timestamps
+        dataset_from_index = self._num_samples
+        dataset_to_index = dataset_from_index + len(frames)
+
+        resolved_tasks = list(tasks) if tasks else [self.default_task]
+        task_indices = [self._register_task(task) for task in resolved_tasks]
+        task_index = task_indices[0]
+
+        for offset, (frame_idx, frame, action, state, timestamp) in enumerate(
+            zip(frame_indices, frames, actions, states, timestamps)
         ):
+            dataset_index = dataset_from_index + offset
             self._rows.append(
                 {
+                    "index": int(dataset_index),
                     "episode_index": int(episode_index),
                     "frame_index": int(frame_idx),
                     "timestamp": float(timestamp),
                     "action": np.asarray(action, dtype=np.float32),
                     "state": None if state is None else np.asarray(state, dtype=np.float32),
+                    "task_index": int(task_index),
                 }
             )
             self._frames.append(np.asarray(frame))
@@ -314,30 +349,23 @@ class DatasetManager:
             self._stats.update_image("image", np.asarray(frame))
 
         self._num_samples += len(frames)
+        self._record_episode_metadata(
+            episode_index=episode_index,
+            dataset_from_index=dataset_from_index,
+            dataset_to_index=dataset_to_index,
+            tasks=resolved_tasks,
+        )
         self._flush_if_needed()
 
     def finalize(self) -> Path:
         if self._rows:
             self._flush_chunk(len(self._rows))
 
-        metadata = {
-            "feature_schema": FEATURE_SCHEMA,
-            "paths": {
-                "data_path": self.data_template,
-                "video_path": self.video_template,
-            },
-            "stats": self._stats.summary(),
-            "num_episodes": self._num_episodes,
-            "num_samples": self._num_samples,
-            "chunk_size": self.chunk_size,
-            "fps": self.fps,
-            "frame_shape": list(self._frame_shape) if self._frame_shape is not None else None,
-            "action_dim": self._action_dim,
-            "state_dim": self._state_dim,
-        }
-        metadata_path = self.dataset_dir / "metadata.json"
-        metadata_path.write_text(json.dumps(metadata, indent=2))
-        return metadata_path
+        episodes_path = self._write_episodes_metadata()
+        tasks_path = self._write_tasks_metadata()
+        info_path = self._write_info_json()
+
+        return info_path
 
     # Internal helpers -------------------------------------------------
 
@@ -352,13 +380,17 @@ class DatasetManager:
         del self._rows[:size]
         del self._frames[:size]
 
-        video_rel_path = Path(self.video_template.format(chunk=self._chunk_index))
+        video_rel_path = Path(
+            self.video_template.format(chunk_index=self._chunk_index, file_index=0)
+        )
         video_path = self.dataset_dir / video_rel_path
         self._write_video(video_path, frames_chunk)
 
-        data_rel_path = Path(self.data_template.format(chunk=self._chunk_index))
+        data_rel_path = Path(
+            self.data_template.format(chunk_index=self._chunk_index, file_index=0)
+        )
         data_path = self.dataset_dir / data_rel_path
-        self._write_parquet(data_path, rows_chunk, video_rel_path)
+        self._write_parquet(data_path, rows_chunk)
 
         self._chunk_index += 1
 
@@ -374,16 +406,18 @@ class DatasetManager:
             for frame in frames:
                 writer.append_data(np.asarray(frame))
 
+        self._video_files.append(video_path)
+
     def _write_parquet(
-        self, data_path: Path, rows: Sequence[Dict[str, object]], video_rel_path: Path
+        self, data_path: Path, rows: Sequence[Dict[str, object]]
     ) -> None:
         data_path.parent.mkdir(parents=True, exist_ok=True)
 
+        dataset_indices = pa.array([row["index"] for row in rows], type=pa.int64())
         episode_indices = pa.array([row["episode_index"] for row in rows], type=pa.int64())
         frame_indices = pa.array([row["frame_index"] for row in rows], type=pa.int64())
-        timestamps = pa.array([row["timestamp"] for row in rows], type=pa.float64())
-        video_frame_indices = pa.array(range(len(rows)), type=pa.int64())
-        video_paths = pa.array([str(video_rel_path)] * len(rows))
+        task_indices = pa.array([row["task_index"] for row in rows], type=pa.int64())
+        timestamps = pa.array([row["timestamp"] for row in rows], type=pa.float32())
 
         action_array = pa.array(
             [np.asarray(row["action"]).tolist() for row in rows],
@@ -398,22 +432,180 @@ class DatasetManager:
 
         table = pa.Table.from_arrays(
             [
+                dataset_indices,
                 episode_indices,
                 frame_indices,
                 timestamps,
-                video_frame_indices,
-                video_paths,
+                task_indices,
                 action_array,
                 state_array,
             ],
             names=[
+                "index",
                 "episode_index",
                 "frame_index",
                 "timestamp",
-                "video_frame_index",
-                "video_path",
+                "task_index",
                 "action",
-                "state",
+                "observation.state",
             ],
         )
         pq.write_table(table, data_path)
+
+        self._data_files.append(data_path)
+
+    # Metadata writers -------------------------------------------------
+
+    def _register_task(self, task: str) -> int:
+        if task not in self._tasks:
+            self._tasks[task] = len(self._tasks)
+        return self._tasks[task]
+
+    def _record_episode_metadata(
+        self,
+        *,
+        episode_index: int,
+        dataset_from_index: int,
+        dataset_to_index: int,
+        tasks: Sequence[str],
+    ) -> None:
+        data_chunk_index = dataset_from_index // self.chunk_size
+        start_in_chunk = dataset_from_index - data_chunk_index * self.chunk_size
+        length = dataset_to_index - dataset_from_index
+        from_timestamp = start_in_chunk / float(self.fps)
+        to_timestamp = (start_in_chunk + length) / float(self.fps)
+
+        self._episodes_rows.append(
+            {
+                "episode_index": int(episode_index),
+                "data_chunk_index": int(data_chunk_index),
+                "data_file_index": 0,
+                "dataset_from_index": int(dataset_from_index),
+                "dataset_to_index": int(dataset_to_index),
+                "video_chunk_index": int(data_chunk_index),
+                "video_file_index": 0,
+                "video_from_timestamp": float(from_timestamp),
+                "video_to_timestamp": float(to_timestamp),
+                "tasks": list(tasks) if tasks else [self.default_task],
+                "length": int(length),
+            }
+        )
+
+    def _write_tasks_metadata(self) -> Path:
+        if not self._tasks:
+            self._register_task(self.default_task)
+
+        descriptions = list(self._tasks.keys())
+        indices = [self._tasks[desc] for desc in descriptions]
+
+        table = pa.Table.from_arrays(
+            [pa.array(descriptions, type=pa.string()), pa.array(indices, type=pa.int64())],
+            names=["__index_level_0__", "task_index"],
+        )
+
+        self.meta_dir.mkdir(parents=True, exist_ok=True)
+        tasks_path = self.meta_dir / "tasks.parquet"
+        pq.write_table(table, tasks_path)
+        return tasks_path
+
+    def _write_episodes_metadata(self) -> Path:
+        episodes_chunk_dir = self.episodes_dir / f"chunk-{0:03d}"
+        episodes_chunk_dir.mkdir(parents=True, exist_ok=True)
+        episodes_path = episodes_chunk_dir / "episodes-000.parquet"
+
+        table = pa.Table.from_arrays(
+            [
+                pa.array([row["episode_index"] for row in self._episodes_rows], type=pa.int64()),
+                pa.array([row["data_chunk_index"] for row in self._episodes_rows], type=pa.int64()),
+                pa.array([row["data_file_index"] for row in self._episodes_rows], type=pa.int64()),
+                pa.array([row["dataset_from_index"] for row in self._episodes_rows], type=pa.int64()),
+                pa.array([row["dataset_to_index"] for row in self._episodes_rows], type=pa.int64()),
+                pa.array([row["video_chunk_index"] for row in self._episodes_rows], type=pa.int64()),
+                pa.array([row["video_file_index"] for row in self._episodes_rows], type=pa.int64()),
+                pa.array(
+                    [row["video_from_timestamp"] for row in self._episodes_rows],
+                    type=pa.float32(),
+                ),
+                pa.array(
+                    [row["video_to_timestamp"] for row in self._episodes_rows], type=pa.float32()
+                ),
+                pa.array([row["tasks"] for row in self._episodes_rows], type=pa.list_(pa.string())),
+                pa.array([row["length"] for row in self._episodes_rows], type=pa.int64()),
+            ],
+            names=[
+                "episode_index",
+                "data/chunk_index",
+                "data/file_index",
+                "dataset_from_index",
+                "dataset_to_index",
+                "videos/observation.image/chunk_index",
+                "videos/observation.image/file_index",
+                "videos/observation.image/from_timestamp",
+                "videos/observation.image/to_timestamp",
+                "tasks",
+                "length",
+            ],
+        )
+
+        pq.write_table(table, episodes_path)
+        return episodes_path
+
+    def _write_info_json(self) -> Path:
+        info = {
+            "codebase_version": f"v{__version__}",
+            "robot_type": "unknown",
+            "total_episodes": len(self._episodes_rows),
+            "total_frames": self._num_samples,
+            "total_tasks": len(self._tasks) if self._tasks else 1,
+            "data_files_size_in_mb": self._total_size_in_mb(self._data_files),
+            "video_files_size_in_mb": self._total_size_in_mb(self._video_files),
+            "chunks_size": self.chunk_size,
+            "fps": self.fps,
+            "splits": {"train": "0:1000000"},
+            "data_path": self.data_template,
+            "video_path": self.video_template,
+            "features": self._feature_schema(),
+        }
+
+        self.meta_dir.mkdir(parents=True, exist_ok=True)
+        info_path = self.meta_dir / "info.json"
+        info_path.write_text(json.dumps(info, indent=2))
+        return info_path
+
+    def _total_size_in_mb(self, files: Sequence[Path]) -> float:
+        total_bytes = sum(path.stat().st_size for path in files if path.exists())
+        return total_bytes / 1_000_000 if total_bytes else 0.0
+
+    def _feature_schema(self) -> Dict[str, object]:
+        image_shape = list(self._frame_shape) if self._frame_shape is not None else []
+        state_shape = [self._state_dim] if self._state_dim is not None else []
+        action_shape = [self._action_dim] if self._action_dim is not None else []
+
+        return {
+            "observation.image": {
+                "dtype": "video",
+                "shape": image_shape,
+                "names": ["height", "width", "channel"],
+                "video_info": {
+                    "video.fps": float(self.fps),
+                    "video.codec": "h264",
+                    "video.pix_fmt": "yuv420p",
+                    "video.is_depth_map": False,
+                    "has_audio": False,
+                },
+            },
+            "observation.state": {
+                "dtype": "float32",
+                "shape": state_shape,
+                "fps": self.fps,
+            },
+            "action": {"dtype": "float32", "shape": action_shape, "fps": self.fps},
+            "episode_index": {"dtype": "int64", "shape": [1], "fps": self.fps},
+            "frame_index": {"dtype": "int64", "shape": [1], "fps": self.fps},
+            "timestamp": {"dtype": "float32", "shape": [1], "fps": self.fps},
+            "next.reward": {"dtype": "float32", "shape": [1], "fps": self.fps},
+            "next.done": {"dtype": "bool", "shape": [1], "fps": self.fps},
+            "next.success": {"dtype": "bool", "shape": [1], "fps": self.fps},
+            "index": {"dtype": "int64", "shape": [1], "fps": self.fps},
+            "task_index": {"dtype": "int64", "shape": [1], "fps": self.fps},
+        }
