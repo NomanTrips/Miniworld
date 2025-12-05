@@ -58,6 +58,24 @@ def main():
         default="Center and zoom on the target.",
         help="short task description to record in tasks.parquet",
     )
+    parser.add_argument(
+        "--obs-width",
+        type=int,
+        default=512,
+        help=(
+            "horizontal resolution for recorded observations; divisible by 16 to "
+            "avoid codec padding (e.g., 512, 1280)"
+        ),
+    )
+    parser.add_argument(
+        "--obs-height",
+        type=int,
+        default=512,
+        help=(
+            "vertical resolution for recorded observations; divisible by 16 to "
+            "avoid codec padding (e.g., 512, 704)"
+        ),
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -66,6 +84,8 @@ def main():
         view=view_mode,
         render_mode="human",
         show_hud=not args.hide_hud,
+        obs_width=args.obs_width,
+        obs_height=args.obs_height,
     )
     miniworld_version = miniworld.__version__
 
