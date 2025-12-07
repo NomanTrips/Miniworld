@@ -252,6 +252,7 @@ class DatasetManager:
         data_template: str = "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
         video_template: str = "videos/observation.image/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
         default_task: str = "Center and zoom on the target.",
+        append: bool = False,
     ) -> None:
         self.dataset_dir = Path(dataset_dir)
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -287,6 +288,79 @@ class DatasetManager:
         self._frame_shape: Optional[Sequence[int]] = None
         self._episodes_rows: List[Dict[str, object]] = []
         self._tasks: Dict[str, int] = {}
+
+        if append:
+            self._load_existing_dataset()
+
+    def _load_existing_dataset(self) -> None:
+        info_path = self.meta_dir / "info.json"
+        if info_path.exists():
+            try:
+                info = json.loads(info_path.read_text())
+            except json.JSONDecodeError:
+                info = {}
+            self._num_samples = int(info.get("total_frames", 0))
+            self._num_episodes = int(info.get("total_episodes", 0))
+
+            features = info.get("features", {})
+            image_schema = features.get("observation.image", {})
+            self._frame_shape = tuple(image_schema.get("shape", [])) or None
+            state_schema = features.get("observation.state", {})
+            state_shape = state_schema.get("shape") or []
+            if state_shape:
+                self._state_dim = int(state_shape[0])
+            action_schema = features.get("action", {})
+            action_shape = action_schema.get("shape") or []
+            if action_shape:
+                self._action_dim = int(action_shape[0])
+
+        tasks_path = self.meta_dir / "tasks.parquet"
+        if tasks_path.exists():
+            table = pq.read_table(tasks_path)
+            descriptions = table.column(0).to_pylist()
+            indices = table.column(1).to_pylist()
+            for desc, idx in zip(descriptions, indices):
+                self._tasks[str(desc)] = int(idx)
+
+        episodes_path = self.episodes_dir / "chunk-000" / "episodes-000.parquet"
+        if episodes_path.exists():
+            table = pq.read_table(episodes_path)
+            for row in table.to_pylist():
+                self._episodes_rows.append(
+                    {
+                        "episode_index": int(row.get("episode_index", 0)),
+                        "data_chunk_index": int(row.get("data/chunk_index", 0)),
+                        "data_file_index": int(row.get("data/file_index", 0)),
+                        "dataset_from_index": int(row.get("dataset_from_index", 0)),
+                        "dataset_to_index": int(row.get("dataset_to_index", 0)),
+                        "video_chunk_index": int(
+                            row.get("videos/observation.image/chunk_index", 0)
+                        ),
+                        "video_file_index": int(
+                            row.get("videos/observation.image/file_index", 0)
+                        ),
+                        "video_from_timestamp": float(
+                            row.get("videos/observation.image/from_timestamp", 0.0)
+                        ),
+                        "video_to_timestamp": float(
+                            row.get("videos/observation.image/to_timestamp", 0.0)
+                        ),
+                        "tasks": list(row.get("tasks", [])),
+                        "length": int(row.get("length", 0)),
+                    }
+                )
+
+        self._data_files = sorted(self.dataset_dir.glob("data/chunk-*/file-*.parquet"))
+        self._video_files = sorted(
+            self.dataset_dir.glob("videos/observation.image/chunk-*/file-*.mp4")
+        )
+
+        existing_chunks = [
+            int(path.parent.name.split("-")[1])
+            for path in self._data_files
+            if "chunk-" in path.parent.name
+        ]
+        self._chunk_index = max(existing_chunks, default=-1) + 1
 
     def create_episode_writer(
         self, episode_index: Optional[int] = None, *, tasks: Optional[Sequence[str]] = None

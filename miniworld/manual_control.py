@@ -22,6 +22,7 @@ class ManualControl:
         fullscreen: bool = False,
         window_size: Optional[str] = None,
         task_description: str = "Center and zoom on the target.",
+        append: bool = False,
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -62,7 +63,9 @@ class ManualControl:
         self._recordings_dir = Path.cwd() / "episode_recordings"
         self._task_description = task_description
         self._dataset_manager = DatasetManager(
-            self._recordings_dir, default_task=self._task_description
+            self._recordings_dir,
+            default_task=self._task_description,
+            append=append,
         )
 
     @staticmethod
