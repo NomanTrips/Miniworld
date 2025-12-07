@@ -133,6 +133,11 @@ class ManualControl:
 
             if symbol == key.ESCAPE:
                 self._stop_episode_writer()
+                # Stop the pyglet event loop before closing the window. Otherwise
+                # pyglet's idle handler can attempt to flip a window whose GL
+                # context has already been destroyed, resulting in an AttributeError
+                # on window.flip().
+                pyglet.app.exit()
                 self.env.close()
 
             if symbol == key.PAGEUP or symbol == key.P:
