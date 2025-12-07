@@ -43,6 +43,7 @@ class ManualControl:
 
         self._last_mouse_turn_delta = 0.0
         self._last_mouse_pitch_delta = 0.0
+        self._shutdown_requested = False
 
         self._fullscreen = fullscreen
         self._mouse_exclusive = True
@@ -90,7 +91,7 @@ class ManualControl:
         print(
             "move: arrow keys (mouse to look)\n"
             "strafe: A/D\npickup: P\ndrop: B\n"
-            "toggle fullscreen: F11\nquit: ESC"
+            "toggle fullscreen: F11\nquit: ESC or Q"
         )
         print("============")
 
@@ -131,14 +132,9 @@ class ManualControl:
                 self.env.render()
                 return
 
-            if symbol == key.ESCAPE:
-                self._stop_episode_writer()
-                # Stop the pyglet event loop before closing the window. Otherwise
-                # pyglet's idle handler can attempt to flip a window whose GL
-                # context has already been destroyed, resulting in an AttributeError
-                # on window.flip().
-                pyglet.app.exit()
-                self.env.close()
+            if symbol in (key.ESCAPE, key.Q):
+                self._request_shutdown()
+                return
 
             if symbol == key.PAGEUP or symbol == key.P:
                 self.pickup_requested = True
@@ -180,8 +176,7 @@ class ManualControl:
 
         @env.unwrapped.window.event
         def on_close():
-            self._stop_episode_writer()
-            pyglet.app.exit()
+            self._request_shutdown()
 
         def update(dt):
             action = np.zeros(len(self.env.actions), dtype=np.float32)
@@ -253,6 +248,20 @@ class ManualControl:
         self._stop_episode_writer()
         self.env.close()
         self._dataset_manager.finalize()
+
+    def _request_shutdown(self):
+        if self._shutdown_requested:
+            return
+
+        self._shutdown_requested = True
+
+        # Stop the pyglet event loop. The actual environment cleanup happens
+        # after ``pyglet.app.run`` returns; closing the window here can destroy
+        # the GL context while the event loop is still running, which triggers
+        # ``AttributeError: 'NoneType' object has no attribute 'flip'`` inside
+        # pyglet's idle handler.
+        self._stop_episode_writer()
+        pyglet.app.exit()
 
     def step(self, action):
         if isinstance(action, np.ndarray):
