@@ -59,6 +59,11 @@ def main():
         help="short task description to record in tasks.parquet",
     )
     parser.add_argument(
+        "--append",
+        action="store_true",
+        help="append newly recorded episodes to an existing dataset",
+    )
+    parser.add_argument(
         "--obs-width",
         type=int,
         default=512,
@@ -99,6 +104,7 @@ def main():
         fullscreen=args.fullscreen,
         window_size=args.window_size,
         task_description=args.task,
+        append=args.append,
     )
     manual_control.run()
 
