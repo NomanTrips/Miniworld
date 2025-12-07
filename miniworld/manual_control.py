@@ -67,6 +67,7 @@ class ManualControl:
             default_task=self._task_description,
             append=append,
         )
+        self._exit_requested = False
 
     @staticmethod
     def _parse_window_size(window_size: str):
@@ -133,12 +134,12 @@ class ManualControl:
 
             if symbol == key.ESCAPE:
                 self._stop_episode_writer()
-                # Stop the pyglet event loop. The actual environment cleanup
-                # happens after ``pyglet.app.run`` returns; closing the window
-                # here can destroy the GL context while the event loop is still
-                # running, which triggers ``AttributeError: 'NoneType' object has
-                # no attribute 'flip'`` inside pyglet's idle handler.
-                pyglet.app.exit()
+                self._request_exit()
+                return
+
+            if symbol == key.ENTER:
+                self._request_exit()
+                return
 
             if symbol == key.PAGEUP or symbol == key.P:
                 self.pickup_requested = True
@@ -146,8 +147,6 @@ class ManualControl:
                 self.drop_requested = True
             elif symbol == key.SPACE:
                 self._toggle_episode_writer()
-            elif symbol == key.ENTER:
-                pyglet.app.exit()
             elif symbol == key.F11:
                 self._toggle_fullscreen()
 
@@ -180,10 +179,18 @@ class ManualControl:
 
         @env.unwrapped.window.event
         def on_close():
+            # Defer actual window destruction until after the pyglet event loop
+            # exits to avoid losing the GL context while ``idle`` is still
+            # running (which causes ``AttributeError: 'NoneType' object has no
+            # attribute 'flip'`` inside pyglet on Windows).
             self._stop_episode_writer()
-            pyglet.app.exit()
+            self._request_exit()
+            return pyglet.event.EVENT_HANDLED
 
         def update(dt):
+            if self._exit_requested:
+                return
+
             action = np.zeros(len(self.env.actions), dtype=np.float32)
 
             # Keyboard state-based movement
@@ -250,9 +257,17 @@ class ManualControl:
         # Enter main event loop
         pyglet.app.run()
 
+        window.set_visible(False)
         self._stop_episode_writer()
         self.env.close()
         self._dataset_manager.finalize()
+
+    def _request_exit(self):
+        if self._exit_requested:
+            return
+
+        self._exit_requested = True
+        pyglet.app.exit()
 
     def step(self, action):
         if isinstance(action, np.ndarray):
