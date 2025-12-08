@@ -249,8 +249,8 @@ class DatasetManager:
         *,
         chunk_size: int = 1000,
         fps: int = 10,
-        data_template: str = "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
-        video_template: str = "videos/observation.image/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+        data_template: str = "data/file-{file_index:04d}.parquet",
+        video_template: str = "videos/observation.image/file-{file_index:04d}.mp4",
         default_task: str = "Center and zoom on the target.",
         append: bool = False,
     ) -> None:
@@ -277,6 +277,7 @@ class DatasetManager:
         self._rows: List[Dict[str, object]] = []
         self._frames: List[np.ndarray] = []
         self._chunk_index: int = 0
+        self._file_index: int = 0
         self._num_episodes: int = 0
         self._num_samples: int = 0
         self._data_files: List[Path] = []
@@ -314,13 +315,17 @@ class DatasetManager:
             if action_shape:
                 self._action_dim = int(action_shape[0])
 
-        tasks_path = self.meta_dir / "tasks.parquet"
+        tasks_path = self.meta_dir / "tasks.jsonl"
         if tasks_path.exists():
-            table = pq.read_table(tasks_path)
-            descriptions = table.column(0).to_pylist()
-            indices = table.column(1).to_pylist()
-            for desc, idx in zip(descriptions, indices):
-                self._tasks[str(desc)] = int(idx)
+            for line in tasks_path.read_text().splitlines():
+                try:
+                    task = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                description = task.get("description")
+                task_id = task.get("task_id")
+                if description is not None and task_id is not None:
+                    self._tasks[str(description)] = int(task_id)
 
         episodes_path = self.episodes_dir / "chunk-000" / "episodes-000.parquet"
         if episodes_path.exists():
@@ -350,17 +355,16 @@ class DatasetManager:
                     }
                 )
 
-        self._data_files = sorted(self.dataset_dir.glob("data/chunk-*/file-*.parquet"))
+        self._data_files = sorted(self.dataset_dir.glob("data/file-*.parquet"))
         self._video_files = sorted(
-            self.dataset_dir.glob("videos/observation.image/chunk-*/file-*.mp4")
+            self.dataset_dir.glob("videos/observation.image/file-*.mp4")
         )
 
-        existing_chunks = [
-            int(path.parent.name.split("-")[1])
-            for path in self._data_files
-            if "chunk-" in path.parent.name
+        existing_indices = [
+            int(path.stem.split("-")[1]) for path in self._data_files if "-" in path.stem
         ]
-        self._chunk_index = max(existing_chunks, default=-1) + 1
+        self._chunk_index = max(existing_indices, default=-1) + 1
+        self._file_index = self._chunk_index
 
     def create_episode_writer(
         self, episode_index: Optional[int] = None, *, tasks: Optional[Sequence[str]] = None
@@ -422,8 +426,8 @@ class DatasetManager:
             self._stats.update_numeric("timestamp", np.asarray(timestamp))
             self._stats.update_numeric("action", np.asarray(action))
             if state is not None:
-                self._stats.update_numeric("state", np.asarray(state))
-            self._stats.update_image("image", np.asarray(frame))
+                self._stats.update_numeric("observation.state", np.asarray(state))
+            self._stats.update_image("observation.image", np.asarray(frame))
 
         self._num_samples += len(frames)
         self._record_episode_metadata(
@@ -440,6 +444,7 @@ class DatasetManager:
 
         episodes_path = self._write_episodes_metadata()
         tasks_path = self._write_tasks_metadata()
+        stats_path = self._write_stats_metadata()
         info_path = self._write_info_json()
 
         return info_path
@@ -458,18 +463,19 @@ class DatasetManager:
         del self._frames[:size]
 
         video_rel_path = Path(
-            self.video_template.format(chunk_index=self._chunk_index, file_index=0)
+            self.video_template.format(chunk_index=self._chunk_index, file_index=self._file_index)
         )
         video_path = self.dataset_dir / video_rel_path
         self._write_video(video_path, frames_chunk)
 
         data_rel_path = Path(
-            self.data_template.format(chunk_index=self._chunk_index, file_index=0)
+            self.data_template.format(chunk_index=self._chunk_index, file_index=self._file_index)
         )
         data_path = self.dataset_dir / data_rel_path
         self._write_parquet(data_path, rows_chunk)
 
         self._chunk_index += 1
+        self._file_index += 1
 
     def _write_video(self, video_path: Path, frames: Iterable[np.ndarray]) -> None:
         video_path.parent.mkdir(parents=True, exist_ok=True)
@@ -556,11 +562,11 @@ class DatasetManager:
             {
                 "episode_index": int(episode_index),
                 "data_chunk_index": int(data_chunk_index),
-                "data_file_index": 0,
+                "data_file_index": int(data_chunk_index),
                 "dataset_from_index": int(dataset_from_index),
                 "dataset_to_index": int(dataset_to_index),
                 "video_chunk_index": int(data_chunk_index),
-                "video_file_index": 0,
+                "video_file_index": int(data_chunk_index),
                 "video_from_timestamp": float(from_timestamp),
                 "video_to_timestamp": float(to_timestamp),
                 "tasks": list(tasks) if tasks else [self.default_task],
@@ -572,18 +578,19 @@ class DatasetManager:
         if not self._tasks:
             self._register_task(self.default_task)
 
-        descriptions = list(self._tasks.keys())
-        indices = [self._tasks[desc] for desc in descriptions]
-
-        table = pa.Table.from_arrays(
-            [pa.array(descriptions, type=pa.string()), pa.array(indices, type=pa.int64())],
-            names=["__index_level_0__", "task_index"],
-        )
-
         self.meta_dir.mkdir(parents=True, exist_ok=True)
-        tasks_path = self.meta_dir / "tasks.parquet"
-        pq.write_table(table, tasks_path)
+        tasks_path = self.meta_dir / "tasks.jsonl"
+        lines = []
+        for description, index in sorted(self._tasks.items(), key=lambda item: item[1]):
+            lines.append(json.dumps({"task_id": int(index), "description": description}))
+        tasks_path.write_text("\n".join(lines))
         return tasks_path
+
+    def _write_stats_metadata(self) -> Path:
+        stats = self._stats.summary()
+        stats_path = self.meta_dir / "stats.json"
+        stats_path.write_text(json.dumps(stats, indent=2))
+        return stats_path
 
     def _write_episodes_metadata(self) -> Path:
         episodes_chunk_dir = self.episodes_dir / f"chunk-{0:03d}"
@@ -629,6 +636,7 @@ class DatasetManager:
 
     def _write_info_json(self) -> Path:
         info = {
+            "version": "3.0.0",
             "codebase_version": f"v{__version__}",
             "robot_type": "unknown",
             "total_episodes": len(self._episodes_rows),
@@ -639,8 +647,13 @@ class DatasetManager:
             "chunks_size": self.chunk_size,
             "fps": self.fps,
             "splits": {"train": "0:1000000"},
-            "data_path": self.data_template,
-            "video_path": self.video_template,
+            "path_templates": {
+                "data": self.data_template,
+                "videos": {"observation.image": self.video_template},
+                "episodes": "meta/episodes/chunk-{chunk_index:03d}/episodes-{chunk_index:03d}.parquet",
+            },
+            "stats": "meta/stats.json",
+            "tasks": "meta/tasks.jsonl",
             "features": self._feature_schema(),
         }
 
