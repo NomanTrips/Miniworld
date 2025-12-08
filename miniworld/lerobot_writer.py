@@ -315,9 +315,16 @@ class DatasetManager:
             if action_shape:
                 self._action_dim = int(action_shape[0])
 
-        tasks_path = self.meta_dir / "tasks.jsonl"
-        if tasks_path.exists():
-            for line in tasks_path.read_text().splitlines():
+        tasks_parquet_path = self.meta_dir / "tasks.parquet"
+        tasks_jsonl_path = self.meta_dir / "tasks.jsonl"
+        if tasks_parquet_path.exists():
+            table = pq.read_table(tasks_parquet_path)
+            descriptions = table.column("description") if "description" in table.column_names else []
+            task_ids = table.column("task_id") if "task_id" in table.column_names else []
+            for description, task_id in zip(descriptions, task_ids):
+                self._tasks[str(description.as_py())] = int(task_id.as_py())
+        elif tasks_jsonl_path.exists():
+            for line in tasks_jsonl_path.read_text().splitlines():
                 try:
                     task = json.loads(line)
                 except json.JSONDecodeError:
@@ -579,11 +586,19 @@ class DatasetManager:
             self._register_task(self.default_task)
 
         self.meta_dir.mkdir(parents=True, exist_ok=True)
-        tasks_path = self.meta_dir / "tasks.jsonl"
-        lines = []
-        for description, index in sorted(self._tasks.items(), key=lambda item: item[1]):
-            lines.append(json.dumps({"task_id": int(index), "description": description}))
-        tasks_path.write_text("\n".join(lines))
+        tasks_path = self.meta_dir / "tasks.parquet"
+        descriptions, indices = zip(
+            *sorted(self._tasks.items(), key=lambda item: item[1])
+        )
+
+        table = pa.Table.from_arrays(
+            [
+                pa.array([int(index) for index in indices], type=pa.int64()),
+                pa.array(list(descriptions), type=pa.string()),
+            ],
+            names=["task_id", "description"],
+        )
+        pq.write_table(table, tasks_path)
         return tasks_path
 
     def _write_stats_metadata(self) -> Path:
@@ -653,7 +668,7 @@ class DatasetManager:
                 "episodes": "meta/episodes/chunk-{chunk_index:03d}/episodes-{chunk_index:03d}.parquet",
             },
             "stats": "meta/stats.json",
-            "tasks": "meta/tasks.jsonl",
+            "tasks": "meta/tasks.parquet",
             "features": self._feature_schema(),
         }
 
