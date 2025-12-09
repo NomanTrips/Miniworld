@@ -248,6 +248,7 @@ class DatasetManager:
         dataset_dir: Path,
         *,
         chunk_size: int = 1000,
+        max_chunk_size_bytes: int = 200_000_000,
         fps: int = 10,
         data_template: str = "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
         video_template: str = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
@@ -259,11 +260,13 @@ class DatasetManager:
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
 
         self.chunk_size = chunk_size
+        self.max_chunk_size_bytes = max_chunk_size_bytes
         self.fps = fps
         self.data_template = data_template
         self.video_template = video_template
         self.default_task = default_task
         self.force_single_chunk = force_single_chunk
+        self._append_mode = append
         self.video_key = "observation.image"
 
         sample_data_path = Path(data_template.format(chunk_index=0, file_index=0))
@@ -283,6 +286,7 @@ class DatasetManager:
         self._frames: List[np.ndarray] = []
         self._chunk_index: int = 0
         self._file_index: int = 0
+        self._current_chunk_bytes: int = 0
         self._num_episodes: int = 0
         self._num_samples: int = 0
         self._data_files: List[Path] = []
@@ -377,8 +381,23 @@ class DatasetManager:
         existing_indices = [
             int(path.stem.split("-")[1]) for path in self._data_files if "-" in path.stem
         ]
-        self._chunk_index = max(existing_indices, default=-1) + 1
-        self._file_index = self._chunk_index
+        last_chunk_index = max(existing_indices, default=-1)
+
+        if last_chunk_index >= 0:
+            last_data = [
+                p for p in self._data_files if f"chunk-{last_chunk_index:03d}" in str(p)
+            ]
+            last_videos = [
+                p for p in self._video_files if f"chunk-{last_chunk_index:03d}" in str(p)
+            ]
+            self._current_chunk_bytes = sum(p.stat().st_size for p in [*last_data, *last_videos])
+
+        if self._append_mode and last_chunk_index >= 0:
+            self._chunk_index = last_chunk_index
+            self._file_index = last_chunk_index
+        else:
+            self._chunk_index = last_chunk_index + 1
+            self._file_index = self._chunk_index
 
     def create_episode_writer(
         self, episode_index: Optional[int] = None, *, tasks: Optional[Sequence[str]] = None
@@ -485,34 +504,86 @@ class DatasetManager:
             )
         )
         video_path = self.dataset_dir / video_rel_path
-        self._write_video(video_path, frames_chunk)
 
         data_rel_path = Path(
             self.data_template.format(chunk_index=self._chunk_index, file_index=self._file_index)
         )
         data_path = self.dataset_dir / data_rel_path
-        self._write_parquet(data_path, rows_chunk)
+        append_to_existing = (
+            self._append_mode
+            and self._current_chunk_bytes < self.max_chunk_size_bytes
+            and video_path.exists()
+            and data_path.exists()
+        )
 
-        self._chunk_index += 1
-        self._file_index += 1
+        if not append_to_existing and self._append_mode and self._current_chunk_bytes >= self.max_chunk_size_bytes:
+            self._chunk_index += 1
+            self._file_index += 1
+            self._current_chunk_bytes = 0
 
-    def _write_video(self, video_path: Path, frames: Iterable[np.ndarray]) -> None:
+            video_rel_path = Path(
+                self.video_template.format(
+                    video_key=self.video_key, chunk_index=self._chunk_index, file_index=self._file_index
+                )
+            )
+            video_path = self.dataset_dir / video_rel_path
+
+            data_rel_path = Path(
+                self.data_template.format(chunk_index=self._chunk_index, file_index=self._file_index)
+            )
+            data_path = self.dataset_dir / data_rel_path
+            append_to_existing = False
+
+        self._write_video(video_path, frames_chunk, append=append_to_existing)
+        self._write_parquet(data_path, rows_chunk, append=append_to_existing)
+
+        self._current_chunk_bytes = sum(
+            path.stat().st_size for path in (video_path, data_path) if path.exists()
+        )
+
+        if not append_to_existing:
+            self._chunk_index += 1
+            self._file_index += 1
+
+    def _write_video(
+        self, video_path: Path, frames: Iterable[np.ndarray], *, append: bool = False
+    ) -> None:
         video_path.parent.mkdir(parents=True, exist_ok=True)
-        with imageio.get_writer(
-            video_path,
-            fps=self.fps,
-            format="FFMPEG",
-            codec="libaom-av1",
-            quality=8,
-            ffmpeg_params=["-pix_fmt", "yuv420p"],
-        ) as writer:
-            for frame in frames:
-                writer.append_data(np.asarray(frame))
+        temp_path = None
 
-        self._video_files.append(video_path)
+        if append and video_path.exists():
+            temp_path = video_path.with_name(video_path.name + ".tmp")
+            with imageio.get_writer(
+                temp_path,
+                fps=self.fps,
+                format="FFMPEG",
+                codec="libaom-av1",
+                quality=8,
+                ffmpeg_params=["-pix_fmt", "yuv420p"],
+            ) as writer:
+                with imageio.get_reader(video_path) as reader:
+                    for frame in reader:
+                        writer.append_data(frame)
+                for frame in frames:
+                    writer.append_data(np.asarray(frame))
+            temp_path.replace(video_path)
+        else:
+            with imageio.get_writer(
+                video_path,
+                fps=self.fps,
+                format="FFMPEG",
+                codec="libaom-av1",
+                quality=8,
+                ffmpeg_params=["-pix_fmt", "yuv420p"],
+            ) as writer:
+                for frame in frames:
+                    writer.append_data(np.asarray(frame))
+
+        if video_path not in self._video_files:
+            self._video_files.append(video_path)
 
     def _write_parquet(
-        self, data_path: Path, rows: Sequence[Dict[str, object]]
+        self, data_path: Path, rows: Sequence[Dict[str, object]], *, append: bool = False
     ) -> None:
         data_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -533,7 +604,7 @@ class DatasetManager:
         ]
         state_array = pa.array(state_values, type=pa.list_(pa.float32()))
 
-        table = pa.Table.from_arrays(
+        new_table = pa.Table.from_arrays(
             [
                 dataset_indices,
                 episode_indices,
@@ -553,9 +624,15 @@ class DatasetManager:
                 "observation.state",
             ],
         )
-        pq.write_table(table, data_path)
+        if append and data_path.exists():
+            existing = pq.read_table(data_path)
+            combined = pa.concat_tables([existing, new_table])
+            pq.write_table(combined, data_path)
+        else:
+            pq.write_table(new_table, data_path)
 
-        self._data_files.append(data_path)
+        if data_path not in self._data_files:
+            self._data_files.append(data_path)
 
     # Metadata writers -------------------------------------------------
 
@@ -581,12 +658,20 @@ class DatasetManager:
         self._episodes_rows.append(
             {
                 "episode_index": int(episode_index),
-                "data_chunk_index": int(data_chunk_index),
-                "data_file_index": int(data_chunk_index),
+                "data_chunk_index": int(
+                    self._chunk_index if self.force_single_chunk else data_chunk_index
+                ),
+                "data_file_index": int(
+                    self._chunk_index if self.force_single_chunk else data_chunk_index
+                ),
                 "dataset_from_index": int(dataset_from_index),
                 "dataset_to_index": int(dataset_to_index),
-                "video_chunk_index": int(data_chunk_index),
-                "video_file_index": int(data_chunk_index),
+                "video_chunk_index": int(
+                    self._chunk_index if self.force_single_chunk else data_chunk_index
+                ),
+                "video_file_index": int(
+                    self._chunk_index if self.force_single_chunk else data_chunk_index
+                ),
                 "video_from_timestamp": float(from_timestamp),
                 "video_to_timestamp": float(to_timestamp),
                 "tasks": list(tasks) if tasks else [self.default_task],
