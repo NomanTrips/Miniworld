@@ -442,6 +442,7 @@ class DatasetManager:
         for offset, (frame_idx, frame, action, state, timestamp) in enumerate(
             zip(frame_indices, frames, actions, states, timestamps)
         ):
+            is_last_in_episode = offset == len(frames) - 1
             dataset_index = dataset_from_index + offset
             self._rows.append(
                 {
@@ -451,6 +452,9 @@ class DatasetManager:
                     "timestamp": float(timestamp),
                     "action": np.asarray(action, dtype=np.float32),
                     "state": None if state is None else np.asarray(state, dtype=np.float32),
+                    "next.reward": 0.0,
+                    "next.done": bool(is_last_in_episode),
+                    "next.success": False,
                     "task_index": int(task_index),
                 }
             )
@@ -461,6 +465,9 @@ class DatasetManager:
             if state is not None:
                 self._stats.update_numeric("observation.state", np.asarray(state))
             self._stats.update_image("observation.image", np.asarray(frame))
+            self._stats.update_numeric("next.reward", np.asarray(0.0))
+            self._stats.update_bool("next.done", np.asarray(is_last_in_episode))
+            self._stats.update_bool("next.success", np.asarray(False))
 
         self._num_samples += len(frames)
         self._record_episode_metadata(
@@ -609,6 +616,10 @@ class DatasetManager:
         ]
         state_array = pa.array(state_values, type=pa.list_(pa.float32()))
 
+        rewards = pa.array([row["next.reward"] for row in rows], type=pa.float32())
+        dones = pa.array([row["next.done"] for row in rows], type=pa.bool_())
+        successes = pa.array([row["next.success"] for row in rows], type=pa.bool_())
+
         new_table = pa.Table.from_arrays(
             [
                 dataset_indices,
@@ -618,6 +629,9 @@ class DatasetManager:
                 task_indices,
                 action_array,
                 state_array,
+                rewards,
+                dones,
+                successes,
             ],
             names=[
                 "index",
@@ -627,6 +641,9 @@ class DatasetManager:
                 "task_index",
                 "action",
                 "observation.state",
+                "next.reward",
+                "next.done",
+                "next.success",
             ],
         )
         if append and data_path.exists():
