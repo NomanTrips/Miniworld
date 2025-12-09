@@ -552,7 +552,12 @@ class DatasetManager:
         temp_path = None
 
         if append and video_path.exists():
-            temp_path = video_path.with_name(video_path.name + ".tmp")
+            # ``imageio`` dispatches writers based on the file suffix. Using a
+            # generic ``.tmp`` extension prevents the FFMPEG writer from being
+            # selected, causing append mode to fail. Keep the ``.mp4`` suffix so
+            # FFMPEG can handle the temporary file correctly before replacing
+            # the original.
+            temp_path = video_path.with_name(f"{video_path.stem}.tmp{video_path.suffix}")
             with imageio.get_writer(
                 temp_path,
                 fps=self.fps,
