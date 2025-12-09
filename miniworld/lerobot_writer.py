@@ -249,10 +249,11 @@ class DatasetManager:
         *,
         chunk_size: int = 1000,
         fps: int = 10,
-        data_template: str = "data/file-{file_index:04d}.parquet",
-        video_template: str = "videos/observation.image/file-{file_index:04d}.mp4",
+        data_template: str = "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+        video_template: str = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
         default_task: str = "Center and zoom on the target.",
         append: bool = False,
+        force_single_chunk: bool = True,
     ) -> None:
         self.dataset_dir = Path(dataset_dir)
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -262,9 +263,13 @@ class DatasetManager:
         self.data_template = data_template
         self.video_template = video_template
         self.default_task = default_task
+        self.force_single_chunk = force_single_chunk
+        self.video_key = "observation.image"
 
         sample_data_path = Path(data_template.format(chunk_index=0, file_index=0))
-        sample_video_path = Path(video_template.format(chunk_index=0, file_index=0))
+        sample_video_path = Path(
+            video_template.format(video_key=self.video_key, chunk_index=0, file_index=0)
+        )
 
         self.data_dir = self.dataset_dir / sample_data_path.parent
         self.video_dir = self.dataset_dir / sample_video_path.parent
@@ -362,9 +367,11 @@ class DatasetManager:
                     }
                 )
 
-        self._data_files = sorted(self.dataset_dir.glob("data/file-*.parquet"))
+        self._data_files = sorted(
+            self.dataset_dir.glob("data/chunk-*/file-*.parquet")
+        )
         self._video_files = sorted(
-            self.dataset_dir.glob("videos/observation.image/file-*.mp4")
+            self.dataset_dir.glob(f"videos/{self.video_key}/chunk-*/file-*.mp4")
         )
 
         existing_indices = [
@@ -459,6 +466,9 @@ class DatasetManager:
     # Internal helpers -------------------------------------------------
 
     def _flush_if_needed(self) -> None:
+        if self.force_single_chunk:
+            return
+
         while len(self._rows) >= self.chunk_size:
             self._flush_chunk(self.chunk_size)
 
@@ -470,7 +480,9 @@ class DatasetManager:
         del self._frames[:size]
 
         video_rel_path = Path(
-            self.video_template.format(chunk_index=self._chunk_index, file_index=self._file_index)
+            self.video_template.format(
+                video_key=self.video_key, chunk_index=self._chunk_index, file_index=self._file_index
+            )
         )
         video_path = self.dataset_dir / video_rel_path
         self._write_video(video_path, frames_chunk)
@@ -490,8 +502,9 @@ class DatasetManager:
             video_path,
             fps=self.fps,
             format="FFMPEG",
-            codec="libx264",
+            codec="libaom-av1",
             quality=8,
+            ffmpeg_params=["-pix_fmt", "yuv420p"],
         ) as writer:
             for frame in frames:
                 writer.append_data(np.asarray(frame))
@@ -559,8 +572,8 @@ class DatasetManager:
         dataset_to_index: int,
         tasks: Sequence[str],
     ) -> None:
-        data_chunk_index = dataset_from_index // self.chunk_size
-        start_in_chunk = dataset_from_index - data_chunk_index * self.chunk_size
+        data_chunk_index = 0 if self.force_single_chunk else dataset_from_index // self.chunk_size
+        start_in_chunk = dataset_from_index if self.force_single_chunk else dataset_from_index - data_chunk_index * self.chunk_size
         length = dataset_to_index - dataset_from_index
         from_timestamp = start_in_chunk / float(self.fps)
         to_timestamp = (start_in_chunk + length) / float(self.fps)
@@ -651,25 +664,19 @@ class DatasetManager:
 
     def _write_info_json(self) -> Path:
         info = {
-            "version": "3.0.0",
-            "codebase_version": f"v{__version__}",
+            "codebase_version": "v3.0",
             "robot_type": "unknown",
             "total_episodes": len(self._episodes_rows),
             "total_frames": self._num_samples,
             "total_tasks": len(self._tasks) if self._tasks else 1,
-            "data_files_size_in_mb": self._total_size_in_mb(self._data_files),
-            "video_files_size_in_mb": self._total_size_in_mb(self._video_files),
             "chunks_size": self.chunk_size,
             "fps": self.fps,
-            "splits": {"train": "0:1000000"},
-            "path_templates": {
-                "data": self.data_template,
-                "videos": {"observation.image": self.video_template},
-                "episodes": "meta/episodes/chunk-{chunk_index:03d}/episodes-{chunk_index:03d}.parquet",
-            },
-            "stats": "meta/stats.json",
-            "tasks": "meta/tasks.parquet",
+            "splits": {"train": f"0:{len(self._episodes_rows)}"},
+            "data_path": self.data_template,
+            "video_path": self.video_template,
             "features": self._feature_schema(),
+            "data_files_size_in_mb": self._total_size_in_mb(self._data_files),
+            "video_files_size_in_mb": self._total_size_in_mb(self._video_files),
         }
 
         self.meta_dir.mkdir(parents=True, exist_ok=True)
@@ -693,7 +700,7 @@ class DatasetManager:
                 "names": ["height", "width", "channel"],
                 "video_info": {
                     "video.fps": float(self.fps),
-                    "video.codec": "h264",
+                    "video.codec": "av1",
                     "video.pix_fmt": "yuv420p",
                     "video.is_depth_map": False,
                     "has_audio": False,
@@ -702,15 +709,21 @@ class DatasetManager:
             "observation.state": {
                 "dtype": "float32",
                 "shape": state_shape,
+                "names": None,
                 "fps": self.fps,
             },
-            "action": {"dtype": "float32", "shape": action_shape, "fps": self.fps},
-            "episode_index": {"dtype": "int64", "shape": [1], "fps": self.fps},
-            "frame_index": {"dtype": "int64", "shape": [1], "fps": self.fps},
-            "timestamp": {"dtype": "float32", "shape": [1], "fps": self.fps},
-            "next.reward": {"dtype": "float32", "shape": [1], "fps": self.fps},
-            "next.done": {"dtype": "bool", "shape": [1], "fps": self.fps},
-            "next.success": {"dtype": "bool", "shape": [1], "fps": self.fps},
-            "index": {"dtype": "int64", "shape": [1], "fps": self.fps},
-            "task_index": {"dtype": "int64", "shape": [1], "fps": self.fps},
+            "action": {
+                "dtype": "float32",
+                "shape": action_shape,
+                "names": None,
+                "fps": self.fps,
+            },
+            "episode_index": {"dtype": "int64", "shape": [1], "names": None, "fps": self.fps},
+            "frame_index": {"dtype": "int64", "shape": [1], "names": None, "fps": self.fps},
+            "timestamp": {"dtype": "float32", "shape": [1], "names": None, "fps": self.fps},
+            "next.reward": {"dtype": "float32", "shape": [1], "names": None, "fps": self.fps},
+            "next.done": {"dtype": "bool", "shape": [1], "names": None, "fps": self.fps},
+            "next.success": {"dtype": "bool", "shape": [1], "names": None, "fps": self.fps},
+            "index": {"dtype": "int64", "shape": [1], "names": None, "fps": self.fps},
+            "task_index": {"dtype": "int64", "shape": [1], "names": None, "fps": self.fps},
         }
