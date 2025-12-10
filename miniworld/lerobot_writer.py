@@ -15,6 +15,7 @@ from typing import Dict, Iterable, List, Optional, Sequence
 
 import imageio
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -707,18 +708,12 @@ class DatasetManager:
 
         self.meta_dir.mkdir(parents=True, exist_ok=True)
         tasks_path = self.meta_dir / "tasks.parquet"
-        descriptions, indices = zip(
-            *sorted(self._tasks.items(), key=lambda item: item[1])
+        sorted_tasks = sorted(self._tasks.items(), key=lambda item: item[1])
+        df = pd.DataFrame(
+            {"task_index": [index for _, index in sorted_tasks]},
+            index=[task for task, _ in sorted_tasks],
         )
-
-        table = pa.Table.from_arrays(
-            [
-                pa.array([int(index) for index in indices], type=pa.int64()),
-                pa.array(list(descriptions), type=pa.string()),
-            ],
-            names=["task_id", "description"],
-        )
-        pq.write_table(table, tasks_path)
+        df.to_parquet(tasks_path, index=True)
         return tasks_path
 
     def _write_stats_metadata(self) -> Path:
