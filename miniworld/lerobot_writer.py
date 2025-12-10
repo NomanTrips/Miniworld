@@ -570,7 +570,7 @@ class DatasetManager:
                 temp_path,
                 fps=self.fps,
                 format="FFMPEG",
-                codec="libaom-av1",
+                codec="libx264",
                 quality=8,
                 ffmpeg_params=["-pix_fmt", "yuv420p"],
             ) as writer:
@@ -585,7 +585,7 @@ class DatasetManager:
                 video_path,
                 fps=self.fps,
                 format="FFMPEG",
-                codec="libaom-av1",
+                codec="libx264",
                 quality=8,
                 ffmpeg_params=["-pix_fmt", "yuv420p"],
             ) as writer:
@@ -802,7 +802,7 @@ class DatasetManager:
                 "names": ["height", "width", "channel"],
                 "video_info": {
                     "video.fps": float(self.fps),
-                    "video.codec": "av1",
+                    "video.codec": "h264",
                     "video.pix_fmt": "yuv420p",
                     "video.is_depth_map": False,
                     "has_audio": False,
