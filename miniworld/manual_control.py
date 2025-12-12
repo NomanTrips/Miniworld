@@ -104,7 +104,7 @@ class ManualControl:
 
         window = env.unwrapped.window
         window.push_handlers(self.key_handler)
-        window.set_exclusive_mouse(self._mouse_exclusive)
+        self._ensure_mouse_capture(window)
 
         if self._fullscreen:
             window.set_fullscreen(True)
@@ -186,6 +186,13 @@ class ManualControl:
             self._stop_episode_writer()
             self._request_exit()
             return pyglet.event.EVENT_HANDLED
+
+        @env.unwrapped.window.event
+        def on_activate():
+            # Re-enable mouse capture when the window regains focus to avoid
+            # scenarios where the cursor remains free until a fullscreen toggle
+            # occurs (common on some platforms when starting in fullscreen).
+            self._ensure_mouse_capture(window)
 
         def update(dt):
             if self._exit_requested:
@@ -318,10 +325,9 @@ class ManualControl:
                 width, height = restore_size
                 window.set_size(width, height)
 
-        window.set_exclusive_mouse(self._mouse_exclusive)
+        self._ensure_mouse_capture(window)
         self._fullscreen = window.fullscreen
-        self._recenter_mouse_cursor(window)
-
+        
     def _toggle_episode_writer(self):
         if self._episode_writer is None:
             self._start_episode_writer()
@@ -381,6 +387,13 @@ class ManualControl:
         center_x = window.width // 2
         center_y = window.height // 2
         window.set_mouse_position(center_x, center_y)
+
+    def _ensure_mouse_capture(self, window):
+        if not self._mouse_exclusive or window is None:
+            return
+
+        window.set_exclusive_mouse(True)
+        self._recenter_mouse_cursor(window)
 
     def _get_box_action_space(self):
         action_space = getattr(self.env, "action_space", None)
