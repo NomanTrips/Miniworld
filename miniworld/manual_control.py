@@ -23,6 +23,7 @@ class ManualControl:
         window_size: Optional[str] = None,
         task_description: str = "Center and zoom on the target.",
         append: bool = False,
+        automatic_recording: bool = False,
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -68,6 +69,7 @@ class ManualControl:
             append=append,
         )
         self._exit_requested = False
+        self._automatic_recording = automatic_recording
 
     @staticmethod
     def _parse_window_size(window_size: str):
@@ -115,6 +117,9 @@ class ManualControl:
         window.set_exclusive_mouse(self._mouse_exclusive)
         self._windowed_size = (window.width, window.height)
         self._recenter_mouse_cursor(window)
+
+        if self._automatic_recording:
+            self._start_episode_writer_if_needed()
 
         @env.unwrapped.window.event
         def on_key_press(symbol, modifiers):
@@ -302,7 +307,11 @@ class ManualControl:
 
         if termination or truncation:
             print("done!")
+            if self._automatic_recording:
+                self._stop_episode_writer()
             self.env.reset()
+            if self._automatic_recording:
+                self._start_episode_writer_if_needed()
 
         self.env.render()
 
@@ -333,6 +342,10 @@ class ManualControl:
             self._start_episode_writer()
         else:
             self._stop_episode_writer()
+
+    def _start_episode_writer_if_needed(self):
+        if self._episode_writer is None:
+            self._start_episode_writer()
 
     def _start_episode_writer(self):
         self._frame_index = 0
