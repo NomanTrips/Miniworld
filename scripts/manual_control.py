@@ -81,6 +81,11 @@ def main():
             "avoid codec padding (e.g., 512, 704)"
         ),
     )
+    parser.add_argument(
+        "--automatic-recording",
+        action="store_true",
+        help="start recording immediately and split episodes automatically",
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -105,6 +110,7 @@ def main():
         window_size=args.window_size,
         task_description=args.task,
         append=args.append,
+        automatic_recording=args.automatic_recording,
     )
     manual_control.run()
 
