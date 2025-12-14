@@ -68,6 +68,13 @@ class ManualControl:
             default_task=self._task_description,
             append=append,
         )
+        if append:
+            self._episode_index = self._dataset_manager.num_episodes
+            if self._episode_index:
+                print(
+                    "[Recorder] Append mode enabled; "
+                    f"resuming at episode index {self._episode_index}"
+                )
         self._exit_requested = False
         self._automatic_recording = automatic_recording
 
