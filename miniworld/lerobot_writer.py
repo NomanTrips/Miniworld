@@ -303,6 +303,12 @@ class DatasetManager:
         if append:
             self._load_existing_dataset()
 
+    @property
+    def num_episodes(self) -> int:
+        """Return the number of episodes recorded or loaded so far."""
+
+        return self._num_episodes
+
     def _load_existing_dataset(self) -> None:
         info_path = self.meta_dir / "info.json"
         if info_path.exists():
