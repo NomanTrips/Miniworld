@@ -86,6 +86,15 @@ def main():
         action="store_true",
         help="start recording immediately and split episodes automatically",
     )
+    parser.add_argument(
+        "--max-chunk-size-mb",
+        type=int,
+        default=None,
+        help=(
+            "maximum size per chunk when appending to an existing dataset; set a large "
+            "value to keep recordings in a single chunk even in append mode"
+        ),
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -111,6 +120,7 @@ def main():
         task_description=args.task,
         append=args.append,
         automatic_recording=args.automatic_recording,
+        max_chunk_size_mb=args.max_chunk_size_mb,
     )
     manual_control.run()
 
