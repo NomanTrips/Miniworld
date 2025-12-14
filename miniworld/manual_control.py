@@ -24,6 +24,7 @@ class ManualControl:
         task_description: str = "Center and zoom on the target.",
         append: bool = False,
         automatic_recording: bool = False,
+        max_chunk_size_mb: Optional[int] = None,
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -63,10 +64,14 @@ class ManualControl:
         self._frame_index: int = 0
         self._recordings_dir = Path.cwd() / "episode_recordings"
         self._task_description = task_description
+        max_chunk_size_bytes = (
+            200_000_000 if max_chunk_size_mb is None else int(max_chunk_size_mb * 1_000_000)
+        )
         self._dataset_manager = DatasetManager(
             self._recordings_dir,
             default_task=self._task_description,
             append=append,
+            max_chunk_size_bytes=max_chunk_size_bytes,
         )
         if append:
             self._episode_index = self._dataset_manager.num_episodes
