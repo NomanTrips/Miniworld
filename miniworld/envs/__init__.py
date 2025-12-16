@@ -4,6 +4,7 @@ from miniworld.envs.collecthealth import CollectHealth
 from miniworld.envs.fourrooms import FourRooms
 from miniworld.envs.hallway import Hallway
 from miniworld.envs.maze import Maze, MazeS2, MazeS3, MazeS3Fast
+from miniworld.envs.navigatewallgap import NavigateWallGap
 from miniworld.envs.oneroom import OneRoom, OneRoomS6, OneRoomS6Fast
 from miniworld.envs.pickupobjects import PickupObjects
 from miniworld.envs.putnext import PutNext
@@ -23,6 +24,7 @@ __all__ = [
     "MazeS2",
     "MazeS3",
     "MazeS3Fast",
+    "NavigateWallGap",
     "OneRoom",
     "OneRoomS6",
     "OneRoomS6Fast",
@@ -59,6 +61,11 @@ gym.register(
 gym.register(
     id="MiniWorld-Maze-v0",
     entry_point="miniworld.envs.maze:Maze",
+)
+
+gym.register(
+    id="MiniWorld-NavigateWallGap-v0",
+    entry_point="miniworld.envs.navigatewallgap:NavigateWallGap",
 )
 
 gym.register(
