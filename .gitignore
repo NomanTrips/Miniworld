@@ -116,3 +116,5 @@ test_results.txt
 
 # MacOS
 .DS_Store
+
+/scripts/episode_recordings

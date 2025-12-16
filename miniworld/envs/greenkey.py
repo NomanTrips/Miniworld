@@ -52,7 +52,7 @@ class GreenKey(MiniWorldEnv, utils.EzPickle):
         self.add_rect_room(min_x=0, max_x=self.size, min_z=0, max_z=self.size)
 
         self.key = self.place_entity(Key(color="green"))
-        self.place_entity(Ball(color="pink"))
+        self.place_entity(Ball(color="red"))
         self.place_entity(Box(color="blue"))
         self.place_agent()
 
