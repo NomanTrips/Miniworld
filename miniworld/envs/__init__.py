@@ -2,6 +2,7 @@ import gymnasium as gym
 
 from miniworld.envs.collecthealth import CollectHealth
 from miniworld.envs.fourrooms import FourRooms
+from miniworld.envs.greenkey import GreenKey
 from miniworld.envs.hallway import Hallway
 from miniworld.envs.maze import Maze, MazeS2, MazeS3, MazeS3Fast
 from miniworld.envs.navigatewallgap import NavigateWallGap
@@ -19,6 +20,7 @@ from miniworld.envs.ymaze import YMaze, YMazeLeft, YMazeRight
 __all__ = [
     "CollectHealth",
     "FourRooms",
+    "GreenKey",
     "Hallway",
     "Maze",
     "MazeS2",
@@ -51,6 +53,11 @@ gym.register(
 gym.register(
     id="MiniWorld-FourRooms-v0",
     entry_point="miniworld.envs.fourrooms:FourRooms",
+)
+
+gym.register(
+    id="MiniWorld-GreenKey-v0",
+    entry_point="miniworld.envs.greenkey:GreenKey",
 )
 
 gym.register(
