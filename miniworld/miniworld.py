@@ -1363,6 +1363,14 @@ class MiniWorldEnv(gym.Env):
             elif is_hovered:
                 color = (90, 132, 204)
 
+            # Use bright text colors to keep labels readable against the
+            # darker button backgrounds, even when hovered or pressed.
+            text_color = (0, 255, 110, 255)
+            if is_pressed:
+                text_color = (120, 255, 150, 255)
+            elif is_hovered:
+                text_color = (60, 255, 130, 255)
+
             rect = shapes.Rectangle(x, y, w, h, color=color, batch=batch)
             rect.opacity = 210
             label_obj = pyglet.text.Label(
@@ -1373,7 +1381,7 @@ class MiniWorldEnv(gym.Env):
                 y=y + h / 2,
                 anchor_x="center",
                 anchor_y="center",
-                color=(255, 255, 255, 255) if not is_pressed else (230, 230, 230, 255),
+                color=text_color,
                 batch=batch,
             )
             self.control_boxes[name] = {
