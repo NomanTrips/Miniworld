@@ -13,7 +13,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-
 OUTPUT_PATH = Path(__file__).resolve().parents[1] / "images" / "manual_control_overlay.png"
 
 
@@ -28,12 +27,25 @@ def _load_fonts():
     return title_font, label_font, body_font
 
 
+def _text_size(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont) -> tuple[int, int]:
+    # Pillow >= 10: use textbbox; works across modern versions.
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    return right - left, bottom - top
+
+
+def _font_text_size(font: ImageFont.ImageFont, text: str) -> tuple[int, int]:
+    # For places where you were using font.getsize(...)
+    left, top, right, bottom = font.getbbox(text)
+    return right - left, bottom - top
+
+
 def _draw_button(draw: ImageDraw.ImageDraw, box, label, font, accent=None):
     x0, y0, x1, y1 = box
     fill = accent if accent is not None else (48, 87, 146)
     outline = (210, 224, 239)
     draw.rounded_rectangle(box, radius=10, fill=fill, outline=outline, width=2)
-    text_w, text_h = draw.textsize(label, font=font)
+
+    text_w, text_h = _text_size(draw, label, font)
     draw.text(
         (x0 + (x1 - x0 - text_w) / 2, y0 + (y1 - y0 - text_h) / 2),
         label,
@@ -45,8 +57,10 @@ def _draw_button(draw: ImageDraw.ImageDraw, box, label, font, accent=None):
 def _draw_section_title(draw, text, origin, font):
     x, y = origin
     draw.text((x, y), text, font=font, fill=(255, 255, 255))
-    underline_y = y + font.getsize(text)[1] + 2
-    draw.line((x, underline_y, x + font.getsize(text)[0], underline_y), fill=(120, 170, 255), width=2)
+
+    text_w, text_h = _font_text_size(font, text)
+    underline_y = y + text_h + 2
+    draw.line((x, underline_y, x + text_w, underline_y), fill=(120, 170, 255), width=2)
     return underline_y + 10
 
 
@@ -68,8 +82,13 @@ def _draw_movement_pad(draw, origin, font):
     _draw_button(draw, (x + pad_size - spacing - btn_w, cy, x + pad_size - spacing, cy + btn_h), "→", font)
 
     caption = "WASD / Arrow keys"
-    text_w, text_h = draw.textsize(caption, font=font)
-    draw.text((x + (pad_size - text_w) / 2, y + pad_size - text_h - 8), caption, font=font, fill=(205, 216, 230))
+    text_w, text_h = _text_size(draw, caption, font)
+    draw.text(
+        (x + (pad_size - text_w) / 2, y + pad_size - text_h - 8),
+        caption,
+        font=font,
+        fill=(205, 216, 230),
+    )
 
 
 def _draw_look_pad(draw, origin, font):
@@ -97,19 +116,19 @@ def _draw_look_pad(draw, origin, font):
     )
     _draw_button(
         draw,
-        (
-            x + pad_w - spacing - btn_w,
-            y + pad_h - spacing - btn_h,
-            x + pad_w - spacing,
-            y + pad_h - spacing,
-        ),
+        (x + pad_w - spacing - btn_w, y + pad_h - spacing - btn_h, x + pad_w - spacing, y + pad_h - spacing),
         "Turn ←",
         font,
     )
 
     caption = "Mouse yaw/pitch mirrored by buttons"
-    text_w, text_h = draw.textsize(caption, font=font)
-    draw.text((x + (pad_w - text_w) / 2, y + pad_h - text_h - 8), caption, font=font, fill=(205, 216, 230))
+    text_w, text_h = _text_size(draw, caption, font)
+    draw.text(
+        (x + (pad_w - text_w) / 2, y + pad_h - text_h - 8),
+        caption,
+        font=font,
+        fill=(205, 216, 230),
+    )
 
 
 def render_overlay(path: Path = OUTPUT_PATH):
@@ -124,7 +143,7 @@ def render_overlay(path: Path = OUTPUT_PATH):
     banner_box = (40, 30, width - 40, banner_h + 30)
     draw.rounded_rectangle(banner_box, radius=18, fill=(24, 36, 56), outline=(60, 96, 148), width=2)
     banner_text = "Manual control HUD: click to drive if keyboard/mouse are busy"
-    text_w, text_h = draw.textsize(banner_text, font=title_font)
+    text_w, text_h = _text_size(draw, banner_text, title_font)
     draw.text(
         (banner_box[0] + (banner_box[2] - banner_box[0] - text_w) / 2, banner_box[1] + (banner_h - text_h) / 2),
         banner_text,
@@ -157,11 +176,12 @@ def render_overlay(path: Path = OUTPUT_PATH):
     cursor_y = tips_box[1] + padding
     for tip in tips:
         draw.text((tips_box[0] + padding, cursor_y), f"• {tip}", font=body_font, fill=(215, 226, 240))
-        cursor_y += body_font.getsize(tip)[1] + 12
+        _, tip_h = _font_text_size(body_font, tip)
+        cursor_y += tip_h + 12
 
     # Footer caption
     footer = "Generated with scripts/generate_manual_control_overlay.py"
-    footer_w, footer_h = draw.textsize(footer, font=body_font)
+    footer_w, footer_h = _text_size(draw, footer, body_font)
     draw.text((width - footer_w - 24, height - footer_h - 24), footer, font=body_font, fill=(150, 170, 190))
 
     path.parent.mkdir(parents=True, exist_ok=True)
