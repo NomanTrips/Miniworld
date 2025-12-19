@@ -1658,7 +1658,9 @@ class MiniWorldEnv(gym.Env):
             )
             self.text_label.draw()
 
+        glDisable(GL_DEPTH_TEST)
         self._draw_control_overlay(window_width, window_height, img_width, img_height)
+        glEnable(GL_DEPTH_TEST)
 
         # Force execution of queued commands
         glFlush()
