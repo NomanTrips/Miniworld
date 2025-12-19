@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 import numpy as np
 import pyglet
 from gymnasium import spaces
-from pyglet.window import key
+from pyglet.window import key, mouse
 
 from miniworld.lerobot_writer import DatasetManager, EpisodeWriter, build_state_vector
 
@@ -82,6 +82,8 @@ class ManualControl:
                 )
         self._exit_requested = False
         self._automatic_recording = automatic_recording
+        self._pressed_controls = set()
+        self._hovered_control: Optional[str] = None
 
     @staticmethod
     def _parse_window_size(window_size: str):
@@ -173,7 +175,28 @@ class ManualControl:
             self.key_handler.on_key_release(symbol, modifiers)
 
         @env.unwrapped.window.event
+        def on_mouse_press(x, y, button, modifiers):
+            control = self._control_at_position(x, y)
+            if control is not None and button == mouse.LEFT:
+                self._pressed_controls.add(control)
+                self._sync_control_pressed_states()
+                return
+
+        @env.unwrapped.window.event
+        def on_mouse_release(x, y, button, modifiers):
+            control = self._control_at_position(x, y)
+            if button == mouse.LEFT:
+                if control is None:
+                    self._pressed_controls.clear()
+                else:
+                    self._pressed_controls.discard(control)
+                self._sync_control_pressed_states()
+
+            self._update_hover_state(x, y)
+
+        @env.unwrapped.window.event
         def on_mouse_motion(x, y, dx, dy):
+            self._update_hover_state(x, y)
             if self._ignore_mouse_motion:
                 self._ignore_mouse_motion = False
                 return
@@ -183,6 +206,7 @@ class ManualControl:
 
         @env.unwrapped.window.event
         def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
+            self._update_hover_state(x, y)
             if self._ignore_mouse_motion:
                 self._ignore_mouse_motion = False
                 return
@@ -228,17 +252,35 @@ class ManualControl:
                 float(self.key_handler[key.D]) - float(self.key_handler[key.A])
             )
 
+            action[self.env.actions.forward_speed] += (
+                float("forward" in self._pressed_controls)
+                - float("backward" in self._pressed_controls)
+            )
+            action[self.env.actions.strafe_speed] += (
+                float("strafe_right" in self._pressed_controls)
+                - float("strafe_left" in self._pressed_controls)
+            )
+
             turn_input = float(self.key_handler[key.RIGHT]) - float(
                 self.key_handler[key.LEFT]
             )
+            turn_input += (
+                float("turn_right" in self._pressed_controls)
+                - float("turn_left" in self._pressed_controls)
+            )
             mouse_turn_delta = -self.mouse_dx * self.turn_sensitivity
             mouse_pitch_delta = self.mouse_dy * self.pitch_sensitivity
+
+            pitch_input = (
+                float("pitch_up" in self._pressed_controls)
+                - float("pitch_down" in self._pressed_controls)
+            )
 
             self._last_mouse_turn_delta = mouse_turn_delta
             self._last_mouse_pitch_delta = mouse_pitch_delta
 
             turn_input += mouse_turn_delta
-            pitch_input = mouse_pitch_delta
+            pitch_input += mouse_pitch_delta
 
             action[self.env.actions.turn_delta] = turn_input
             action[self.env.actions.pitch_delta] = pitch_input
@@ -403,6 +445,40 @@ class ManualControl:
         if isinstance(self.env.action_space, spaces.Discrete):
             return np.array(self._discrete_actions[int(action)], dtype=np.float32)
         return np.array([action], dtype=np.float32)
+
+    def _control_at_position(self, x, y) -> Optional[str]:
+        control_boxes = getattr(self.env.unwrapped, "control_boxes", {})
+
+        for name, data in control_boxes.items():
+            bounds = data.get("bounds") if isinstance(data, dict) else data
+            if bounds is None:
+                continue
+
+            box_x, box_y, box_w, box_h = bounds
+
+            if box_x <= x <= box_x + box_w and box_y <= y <= box_y + box_h:
+                return name
+
+        return None
+
+    def _update_hover_state(self, x, y):
+        hovered = self._control_at_position(x, y)
+
+        if hovered == self._hovered_control:
+            return
+
+        self._hovered_control = hovered
+
+        env = getattr(self.env, "unwrapped", self.env)
+
+        if hasattr(env, "set_control_hover"):
+            env.set_control_hover(hovered)
+
+    def _sync_control_pressed_states(self):
+        env = getattr(self.env, "unwrapped", self.env)
+
+        if hasattr(env, "set_control_pressed"):
+            env.set_control_pressed(self._pressed_controls)
 
     def _recenter_mouse_cursor(self, window):
         if not self._mouse_exclusive or window is None:
