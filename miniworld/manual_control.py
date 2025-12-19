@@ -278,8 +278,8 @@ class ManualControl:
                     self.key_handler[key.LEFT]
                 )
             turn_input += (
-                float("turn_right" in self._pressed_controls)
-                - float("turn_left" in self._pressed_controls)
+                float("turn_left" in self._pressed_controls)
+                - float("turn_right" in self._pressed_controls)
             )
             mouse_turn_delta = (
                 -self.mouse_dx * self.turn_sensitivity if not self._show_controls else 0.0
