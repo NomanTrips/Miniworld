@@ -549,6 +549,8 @@ class MiniWorldEnv(gym.Env):
 
         # Bounding boxes for interactive controls drawn in the HUD area
         self.control_boxes = {}
+        self._hovered_control_name = None
+        self._pressed_control_names = set()
 
         # Initialize the state
         self.reset()
@@ -1315,6 +1317,12 @@ class MiniWorldEnv(gym.Env):
 
         return frame_buffer.get_depth_map(0.04, 100.0)
 
+    def set_control_hover(self, control_name: Optional[str]):
+        self._hovered_control_name = control_name
+
+    def set_control_pressed(self, pressed_controls):
+        self._pressed_control_names = set(pressed_controls)
+
     def _draw_control_overlay(self, window_width, window_height, img_width, img_height):
         """Draw clickable controls near the HUD area."""
 
@@ -1346,9 +1354,18 @@ class MiniWorldEnv(gym.Env):
         self.control_boxes = {}
 
         def add_button(name, label, x, y, w, h):
-            rect = shapes.Rectangle(x, y, w, h, color=(70, 112, 184), batch=batch)
+            is_pressed = name in self._pressed_control_names
+            is_hovered = name == self._hovered_control_name
+
+            color = (70, 112, 184)
+            if is_pressed:
+                color = (52, 90, 155)
+            elif is_hovered:
+                color = (90, 132, 204)
+
+            rect = shapes.Rectangle(x, y, w, h, color=color, batch=batch)
             rect.opacity = 210
-            pyglet.text.Label(
+            label_obj = pyglet.text.Label(
                 label,
                 font_name="Arial",
                 font_size=12,
@@ -1356,10 +1373,14 @@ class MiniWorldEnv(gym.Env):
                 y=y + h / 2,
                 anchor_x="center",
                 anchor_y="center",
-                color=(255, 255, 255, 255),
+                color=(255, 255, 255, 255) if not is_pressed else (230, 230, 230, 255),
                 batch=batch,
             )
-            self.control_boxes[name] = (x, y, w, h)
+            self.control_boxes[name] = {
+                "bounds": (x, y, w, h),
+                "rect": rect,
+                "label": label_obj,
+            }
 
         # First row: turning and forward movement
         button_width = (panel_width - padding * 4) / 3
