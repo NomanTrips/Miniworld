@@ -1339,6 +1339,9 @@ class MiniWorldEnv(gym.Env):
         button_height = 36
 
         batch = pyglet.graphics.Batch()
+        background_group = pyglet.graphics.OrderedGroup(0)
+        shadow_group = pyglet.graphics.OrderedGroup(1)
+        label_group = pyglet.graphics.OrderedGroup(2)
 
         # Dark background behind the buttons to keep them legible
         background = shapes.Rectangle(
@@ -1346,8 +1349,9 @@ class MiniWorldEnv(gym.Env):
             panel_y,
             panel_width,
             panel_height,
-            color=(25, 25, 25),
+            color=(20, 20, 20),
             batch=batch,
+            group=background_group,
         )
         background.opacity = 180
 
@@ -1357,32 +1361,51 @@ class MiniWorldEnv(gym.Env):
             is_pressed = name in self._pressed_control_names
             is_hovered = name == self._hovered_control_name
 
-            color = (70, 112, 184)
+            color = (60, 104, 180)
             if is_pressed:
-                color = (52, 90, 155)
+                color = (45, 88, 156)
             elif is_hovered:
-                color = (90, 132, 204)
+                color = (82, 140, 212)
 
-            # Use bright text colors to keep labels readable against the
-            # darker button backgrounds, even when hovered or pressed.
-            text_color = (0, 255, 110, 255)
+            # Use bright text colors with a subtle shadow for better contrast
+            # against the blue buttons.
+            text_color = (255, 255, 255, 255)
             if is_pressed:
-                text_color = (120, 255, 150, 255)
+                text_color = (235, 255, 205, 255)
             elif is_hovered:
-                text_color = (60, 255, 130, 255)
+                text_color = (255, 255, 225, 255)
 
-            rect = shapes.Rectangle(x, y, w, h, color=color, batch=batch)
+            rect = shapes.Rectangle(
+                x, y, w, h, color=color, batch=batch, group=background_group
+            )
             rect.opacity = 210
+
+            shadow_offset = 1.5
+            pyglet.text.Label(
+                label,
+                font_name="Arial",
+                font_size=13,
+                bold=True,
+                x=x + w / 2 + shadow_offset,
+                y=y + h / 2 - shadow_offset,
+                anchor_x="center",
+                anchor_y="center",
+                color=(0, 0, 0, 200),
+                batch=batch,
+                group=shadow_group,
+            )
             label_obj = pyglet.text.Label(
                 label,
                 font_name="Arial",
-                font_size=12,
+                font_size=13,
+                bold=True,
                 x=x + w / 2,
                 y=y + h / 2,
                 anchor_x="center",
                 anchor_y="center",
                 color=text_color,
                 batch=batch,
+                group=label_group,
             )
             self.control_boxes[name] = {
                 "bounds": (x, y, w, h),
