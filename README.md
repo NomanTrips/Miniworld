@@ -101,6 +101,9 @@ See the list of [available environments](docs/environments.md) for more informat
 
 # Hide the HUD overlay for clean recordings
 ./manual_control.py --env-name MiniWorld-Hallway-v0 --hide-hud
+
+# Disable the clickable on-screen controls (enabled by default)
+./manual_control.py --env-name MiniWorld-Hallway-v0 --no-show-controls
 ```
 
 ### Action space and controls
@@ -126,6 +129,10 @@ env.close()
 ```
 
 The snippet above is the minimal end-to-end example for continuous movement and mouse-look: it creates an environment, issues a single normalized action that moves forward while turning and pitching the camera, and then closes the environment. You can plug the same action structure into rollout loops or adapt it for `scripts/manual_control.py`, which binds the keyboard arrows/WASD for movement and uses the mouse for yaw/pitch while respecting the same sensitivity and pitch limits.
+
+The manual controller also draws a HUD overlay with clickable buttons for moving, strafing, turning, and pitching the camera if `--show-controls` is left enabled (default). Each button mirrors the same WASD/arrow and mouse-look controls, so you can drive the agent entirely with the overlay when recording demos or using a trackpad. Disable the overlay with `--no-show-controls` if you prefer a keyboard-only experience. To regenerate the illustration locally without storing the binary in version control, run `python scripts/generate_manual_control_overlay.py` (requires Pillow) to write `images/manual_control_overlay.png`.
+
+![HUD movement and look buttons](images/manual_control_overlay.png)
 
 While running `scripts/manual_control.py` you can toggle fullscreen at any time with **F11**; the viewer will remember the previous windowed size and keep the mouse cursor captured in both modes.
 

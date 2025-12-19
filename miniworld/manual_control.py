@@ -25,6 +25,7 @@ class ManualControl:
         append: bool = False,
         automatic_recording: bool = False,
         max_chunk_size_mb: Optional[int] = None,
+        show_controls: bool = True,
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -84,6 +85,7 @@ class ManualControl:
         self._automatic_recording = automatic_recording
         self._pressed_controls = set()
         self._hovered_control: Optional[str] = None
+        self._show_controls = show_controls
 
     @staticmethod
     def _parse_window_size(window_size: str):
@@ -109,6 +111,11 @@ class ManualControl:
             "strafe: A/D\npickup: P\ndrop: B\n"
             "toggle fullscreen: F11\nquit: ESC"
         )
+        if self._show_controls:
+            print(
+                "Tip: click the on-screen buttons to move, strafe, and look if you prefer"
+                " not to use the keyboard/mouse."
+            )
         print("============")
 
         self.env.reset()
@@ -447,6 +454,9 @@ class ManualControl:
         return np.array([action], dtype=np.float32)
 
     def _control_at_position(self, x, y) -> Optional[str]:
+        if not self._show_controls:
+            return None
+
         control_boxes = getattr(self.env.unwrapped, "control_boxes", {})
 
         for name, data in control_boxes.items():
@@ -462,6 +472,9 @@ class ManualControl:
         return None
 
     def _update_hover_state(self, x, y):
+        if not self._show_controls:
+            return
+
         hovered = self._control_at_position(x, y)
 
         if hovered == self._hovered_control:
@@ -475,6 +488,9 @@ class ManualControl:
             env.set_control_hover(hovered)
 
     def _sync_control_pressed_states(self):
+        if not self._show_controls:
+            return
+
         env = getattr(self.env, "unwrapped", self.env)
 
         if hasattr(env, "set_control_pressed"):

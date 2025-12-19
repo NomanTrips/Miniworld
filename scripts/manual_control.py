@@ -53,6 +53,19 @@ def main():
         help="run the viewer without the HUD overlay (cleaner recordings)",
     )
     parser.add_argument(
+        "--show-controls",
+        dest="show_controls",
+        default=True,
+        action="store_true",
+        help="enable the on-screen movement/look buttons (default)",
+    )
+    parser.add_argument(
+        "--no-show-controls",
+        dest="show_controls",
+        action="store_false",
+        help="disable the on-screen movement/look buttons",
+    )
+    parser.add_argument(
         "--task",
         type=str,
         default="Center and zoom on the target.",
@@ -103,6 +116,7 @@ def main():
         view=view_mode,
         render_mode="human",
         show_hud=not args.hide_hud,
+        show_controls=args.show_controls,
         obs_width=args.obs_width,
         obs_height=args.obs_height,
     )
@@ -121,6 +135,7 @@ def main():
         append=args.append,
         automatic_recording=args.automatic_recording,
         max_chunk_size_mb=args.max_chunk_size_mb,
+        show_controls=args.show_controls,
     )
     manual_control.run()
 
