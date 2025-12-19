@@ -48,7 +48,10 @@ class ManualControl:
         self._last_mouse_pitch_delta = 0.0
 
         self._fullscreen = fullscreen
-        self._mouse_exclusive = True
+        # When the on-screen controls are enabled, allow the mouse cursor to move
+        # freely so the user can click the buttons. Mouse-look should only be
+        # active when the controls are hidden.
+        self._mouse_exclusive = not show_controls
         self._window_size: Optional[Tuple[int, int]] = None
         if window_size is not None:
             self._window_size = self._parse_window_size(window_size)
@@ -249,15 +252,16 @@ class ManualControl:
             action = np.zeros(len(self.env.actions), dtype=np.float32)
 
             # Keyboard state-based movement
-            action[self.env.actions.forward_speed] = (
-                float(self.key_handler[key.UP])
-                + float(self.key_handler[key.W])
-                - float(self.key_handler[key.DOWN])
-                - float(self.key_handler[key.S])
-            )
-            action[self.env.actions.strafe_speed] = (
-                float(self.key_handler[key.D]) - float(self.key_handler[key.A])
-            )
+            if not self._show_controls:
+                action[self.env.actions.forward_speed] = (
+                    float(self.key_handler[key.UP])
+                    + float(self.key_handler[key.W])
+                    - float(self.key_handler[key.DOWN])
+                    - float(self.key_handler[key.S])
+                )
+                action[self.env.actions.strafe_speed] = (
+                    float(self.key_handler[key.D]) - float(self.key_handler[key.A])
+                )
 
             action[self.env.actions.forward_speed] += (
                 float("forward" in self._pressed_controls)
@@ -268,15 +272,21 @@ class ManualControl:
                 - float("strafe_left" in self._pressed_controls)
             )
 
-            turn_input = float(self.key_handler[key.RIGHT]) - float(
-                self.key_handler[key.LEFT]
-            )
+            turn_input = 0.0
+            if not self._show_controls:
+                turn_input = float(self.key_handler[key.RIGHT]) - float(
+                    self.key_handler[key.LEFT]
+                )
             turn_input += (
                 float("turn_right" in self._pressed_controls)
                 - float("turn_left" in self._pressed_controls)
             )
-            mouse_turn_delta = -self.mouse_dx * self.turn_sensitivity
-            mouse_pitch_delta = self.mouse_dy * self.pitch_sensitivity
+            mouse_turn_delta = (
+                -self.mouse_dx * self.turn_sensitivity if not self._show_controls else 0.0
+            )
+            mouse_pitch_delta = (
+                self.mouse_dy * self.pitch_sensitivity if not self._show_controls else 0.0
+            )
 
             pitch_input = (
                 float("pitch_up" in self._pressed_controls)
