@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 import gymnasium as gym
 import numpy as np
 import pyglet
+from pyglet import shapes
 from gymnasium import spaces
 from gymnasium.core import ObsType
 from pyglet.gl import (
@@ -468,6 +469,7 @@ class MiniWorldEnv(gym.Env):
         render_mode: Optional[str] = None,
         view: str = "agent",
         show_hud: bool = True,
+        show_controls: bool = True,
     ):
         # Action enumeration for this environment
         self.actions = MiniWorldEnv.Actions
@@ -525,6 +527,7 @@ class MiniWorldEnv(gym.Env):
 
         # HUD visibility flag
         self.show_hud = show_hud
+        self.show_controls = show_controls
 
         # Compute the observation display size
         self.obs_disp_width = 256 if self.show_hud else 0
@@ -543,6 +546,9 @@ class MiniWorldEnv(gym.Env):
                 x=window_width + 5,
                 y=window_height - (self.obs_disp_height + 19),
             )
+
+        # Bounding boxes for interactive controls drawn in the HUD area
+        self.control_boxes = {}
 
         # Initialize the state
         self.reset()
@@ -1309,6 +1315,122 @@ class MiniWorldEnv(gym.Env):
 
         return frame_buffer.get_depth_map(0.04, 100.0)
 
+    def _draw_control_overlay(self, window_width, window_height, img_width, img_height):
+        """Draw clickable controls near the HUD area."""
+
+        if not self.show_controls:
+            self.control_boxes = {}
+            return
+
+        panel_width = max(self.obs_disp_width - 20, 220)
+        panel_height = 180
+        panel_x = window_width - panel_width - 10
+        panel_y = 20
+
+        padding = 8
+        button_height = 36
+
+        batch = pyglet.graphics.Batch()
+
+        # Dark background behind the buttons to keep them legible
+        background = shapes.Rectangle(
+            panel_x,
+            panel_y,
+            panel_width,
+            panel_height,
+            color=(25, 25, 25),
+            batch=batch,
+        )
+        background.opacity = 180
+
+        self.control_boxes = {}
+
+        def add_button(name, label, x, y, w, h):
+            rect = shapes.Rectangle(x, y, w, h, color=(70, 112, 184), batch=batch)
+            rect.opacity = 210
+            pyglet.text.Label(
+                label,
+                font_name="Arial",
+                font_size=12,
+                x=x + w / 2,
+                y=y + h / 2,
+                anchor_x="center",
+                anchor_y="center",
+                color=(255, 255, 255, 255),
+                batch=batch,
+            )
+            self.control_boxes[name] = (x, y, w, h)
+
+        # First row: turning and forward movement
+        button_width = (panel_width - padding * 4) / 3
+        row_y = panel_y + panel_height - padding - button_height
+        add_button("turn_left", "Turn Left", panel_x + padding, row_y, button_width, button_height)
+        add_button(
+            "forward",
+            "Forward",
+            panel_x + padding * 2 + button_width,
+            row_y,
+            button_width,
+            button_height,
+        )
+        add_button(
+            "turn_right",
+            "Turn Right",
+            panel_x + padding * 3 + button_width * 2,
+            row_y,
+            button_width,
+            button_height,
+        )
+
+        # Second row: strafing and backward movement
+        row_y -= button_height + padding
+        add_button(
+            "strafe_left",
+            "Strafe Left",
+            panel_x + padding,
+            row_y,
+            button_width,
+            button_height,
+        )
+        add_button(
+            "backward",
+            "Back",
+            panel_x + padding * 2 + button_width,
+            row_y,
+            button_width,
+            button_height,
+        )
+        add_button(
+            "strafe_right",
+            "Strafe Right",
+            panel_x + padding * 3 + button_width * 2,
+            row_y,
+            button_width,
+            button_height,
+        )
+
+        # Third row: camera pitch controls
+        row_y -= button_height + padding
+        pitch_button_width = (panel_width - padding * 3) / 2
+        add_button(
+            "pitch_up",
+            "Look Up",
+            panel_x + padding,
+            row_y,
+            pitch_button_width,
+            button_height,
+        )
+        add_button(
+            "pitch_down",
+            "Look Down",
+            panel_x + padding * 2 + pitch_button_width,
+            row_y,
+            pitch_button_width,
+            button_height,
+        )
+
+        batch.draw()
+
     def get_visible_ents(self):
         """
         Get a list of visible entities.
@@ -1506,6 +1628,8 @@ class MiniWorldEnv(gym.Env):
                 self.step_count,
             )
             self.text_label.draw()
+
+        self._draw_control_overlay(window_width, window_height, img_width, img_height)
 
         # Force execution of queued commands
         glFlush()
