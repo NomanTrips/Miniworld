@@ -39,7 +39,7 @@ class NavigateWallGap(MiniWorldEnv, utils.EzPickle):
     """
 
     def __init__(self, **kwargs):
-        MiniWorldEnv.__init__(self, max_episode_steps=300, **kwargs)
+        MiniWorldEnv.__init__(self, max_episode_steps=2000, **kwargs)
         utils.EzPickle.__init__(self, **kwargs)
 
         # Allow only the movement actions

@@ -1323,6 +1323,96 @@ class MiniWorldEnv(gym.Env):
     def set_control_pressed(self, pressed_controls):
         self._pressed_control_names = set(pressed_controls)
 
+    def _draw_control_overlay_rgb(self, img):
+        """Draw clickable controls onto an RGB numpy array (for rgb_array mode)."""
+        import cv2
+
+        if not self.show_controls:
+            self.control_boxes = {}
+            return img
+
+        img = img.copy()
+        img_height, img_width = img.shape[:2]
+
+        # Panel dimensions matching the OpenGL version
+        panel_width = max(img_width // 4, 220)
+        panel_height = 180
+        panel_x = img_width - panel_width - 10
+        panel_y = img_height - panel_height - 20  # Convert to image coords (origin top-left)
+
+        padding = 8
+        button_height = 36
+
+        # Draw dark background panel
+        overlay = img.copy()
+        cv2.rectangle(
+            overlay,
+            (panel_x, panel_y),
+            (panel_x + panel_width, panel_y + panel_height),
+            (20, 20, 20),
+            -1,
+        )
+        cv2.addWeighted(overlay, 0.7, img, 0.3, 0, img)
+
+        self.control_boxes = {}
+
+        def add_button(name, label, x, y, w, h):
+            is_pressed = name in self._pressed_control_names
+            is_hovered = name == self._hovered_control_name
+
+            # Button colors (BGR for cv2)
+            color = (180, 104, 60)  # Blue in BGR
+            if is_pressed:
+                color = (156, 88, 45)
+            elif is_hovered:
+                color = (212, 140, 82)
+
+            # Draw button rectangle
+            x, y, w, h = int(x), int(y), int(w), int(h)
+            cv2.rectangle(img, (x, y), (x + w, y + h), color, -1)
+            cv2.rectangle(img, (x, y), (x + w, y + h), (40, 40, 40), 1)
+
+            # Draw text shadow then text
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.45
+            thickness = 1
+            text_size = cv2.getTextSize(label, font, font_scale, thickness)[0]
+            text_x = x + (w - text_size[0]) // 2
+            text_y = y + (h + text_size[1]) // 2
+
+            # Shadow
+            cv2.putText(img, label, (text_x + 1, text_y + 1), font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
+            # Text (white)
+            cv2.putText(img, label, (text_x, text_y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+            # Store bounds in image coordinates for hit detection
+            self.control_boxes[name] = {
+                "bounds": (x, y, w, h),
+            }
+
+        # Button layout
+        button_width = (panel_width - padding * 4) // 3
+
+        # First row: turning and forward movement (top row in image = lowest y)
+        row_y = panel_y + padding
+        add_button("turn_left", "Turn Left", panel_x + padding, row_y, button_width, button_height)
+        add_button("forward", "Forward", panel_x + padding * 2 + button_width, row_y, button_width, button_height)
+        add_button("turn_right", "Turn Right", panel_x + padding * 3 + button_width * 2, row_y, button_width, button_height)
+
+        # Second row: strafing and backward movement
+        row_y += button_height + padding
+        add_button("strafe_left", "Strafe Left", panel_x + padding, row_y, button_width, button_height)
+        add_button("backward", "Back", panel_x + padding * 2 + button_width, row_y, button_width, button_height)
+        add_button("strafe_right", "Strafe Right", panel_x + padding * 3 + button_width * 2, row_y, button_width, button_height)
+
+        # Third row: camera pitch controls
+        row_y += button_height + padding
+        pitch_button_width = (panel_width - padding * 3) // 2
+        add_button("pitch_up", "Look Up", panel_x + padding, row_y, pitch_button_width, button_height)
+        add_button("pitch_down", "Look Down", panel_x + padding * 2 + pitch_button_width, row_y, pitch_button_width, button_height)
+
+        return img
+
     def _draw_control_overlay(self, window_width, window_height, img_width, img_height):
         """Draw clickable controls near the HUD area."""
 
@@ -1607,6 +1697,7 @@ class MiniWorldEnv(gym.Env):
         img_height = img.shape[0]
 
         if self.render_mode == "rgb_array":
+            img = self._draw_control_overlay_rgb(img)
             return img
 
         window_width = img_width + self.obs_disp_width

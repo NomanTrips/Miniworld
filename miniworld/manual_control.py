@@ -559,9 +559,9 @@ class ManualControl:
             if action[self.env.actions.strafe_speed] < 0:
                 action_map.setdefault("strafe_left", idx)
             if action[self.env.actions.turn_delta] > 0:
-                action_map.setdefault("turn_right", idx)
-            if action[self.env.actions.turn_delta] < 0:
                 action_map.setdefault("turn_left", idx)
+            if action[self.env.actions.turn_delta] < 0:
+                action_map.setdefault("turn_right", idx)
             if action[self.env.actions.pitch_delta] > 0:
                 action_map.setdefault("pitch_up", idx)
                 has_pitch = True

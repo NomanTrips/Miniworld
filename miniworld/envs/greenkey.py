@@ -38,7 +38,7 @@ class GreenKey(MiniWorldEnv, utils.EzPickle):
     ```
     """
 
-    def __init__(self, size=8, max_episode_steps=150, **kwargs):
+    def __init__(self, size=8, max_episode_steps=2000, **kwargs):
         assert size >= 2
         self.size = size
 

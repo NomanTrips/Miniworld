@@ -43,7 +43,7 @@ class OneRoom(MiniWorldEnv, utils.EzPickle):
     ```
     """
 
-    def __init__(self, size=10, max_episode_steps=180, **kwargs):
+    def __init__(self, size=10, max_episode_steps=1800, **kwargs):
         assert size >= 2
         self.size = size
 
