@@ -189,6 +189,8 @@ class CameraControl(MiniWorldEnv, utils.EzPickle):
         self.agent.cam_height = self.camera_pos[1]
         self.agent.cam_pitch = self.camera_pitch
         self.agent.cam_fov_y = self.camera_fov
+        # cam_fwd_disp is normally set in randomize(), but we need it for cam_pos
+        self.agent.cam_fwd_disp = 0
 
     def step(self, action):
         """Process camera control action and check for goal completion."""
