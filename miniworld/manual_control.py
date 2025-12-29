@@ -579,6 +579,14 @@ class ManualControl:
         return action_map
 
     def _map_controls_to_action(self, action):
+        # Check if environment provides a custom control-to-action mapping
+        # (used by environments like CameraControl with non-standard actions)
+        env_control_map = getattr(self.env.unwrapped, "control_action_map", None)
+        if env_control_map and self._pressed_controls:
+            for control_name in self._pressed_controls:
+                if control_name in env_control_map:
+                    return env_control_map[control_name]
+
         if isinstance(self.env.action_space, spaces.Discrete):
             if not self._discrete_action_map:
                 return None
