@@ -90,6 +90,10 @@ class ManualControl:
         self._hovered_control: Optional[str] = None
         self._show_controls = show_controls
 
+        # Support for click-based action spaces (e.g., CameraControlClick)
+        self._is_click_action_env = self._detect_click_action_env()
+        self._pending_click_action: Optional[np.ndarray] = None
+
     @staticmethod
     def _parse_window_size(window_size: str):
         try:
@@ -109,16 +113,23 @@ class ManualControl:
         print("============")
         print("Instructions")
         print("============")
-        print(
-            "move: arrow keys (mouse to look)\n"
-            "strafe: A/D\npickup: P\ndrop: B\n"
-            "toggle fullscreen: F11\nquit: ESC"
-        )
-        if self._show_controls:
+        if self._is_click_action_env:
             print(
-                "Tip: click the on-screen buttons to move, strafe, and look if you prefer"
-                " not to use the keyboard/mouse."
+                "CLICK-BASED ENVIRONMENT\n"
+                "Click anywhere on the scene to send that position as an action.\n"
+                "toggle fullscreen: F11\nquit: ESC"
             )
+        else:
+            print(
+                "move: arrow keys (mouse to look)\n"
+                "strafe: A/D\npickup: P\ndrop: B\n"
+                "toggle fullscreen: F11\nquit: ESC"
+            )
+            if self._show_controls:
+                print(
+                    "Tip: click the on-screen buttons to move, strafe, and look if you prefer"
+                    " not to use the keyboard/mouse."
+                )
         print("============")
 
         self.env.reset()
@@ -192,6 +203,11 @@ class ManualControl:
                 self._sync_control_pressed_states()
                 return
 
+            # Handle click-based action environments (click on scene)
+            if self._is_click_action_env and button == mouse.LEFT:
+                self._handle_scene_click(x, y, window.width, window.height)
+                return
+
         @env.unwrapped.window.event
         def on_mouse_release(x, y, button, modifiers):
             control = self._control_at_position(x, y)
@@ -247,6 +263,13 @@ class ManualControl:
 
         def update(dt):
             if self._exit_requested:
+                return
+
+            # Handle click-based action environments
+            if self._is_click_action_env and self._pending_click_action is not None:
+                click_action = self._pending_click_action
+                self._pending_click_action = None
+                self.step(click_action)
                 return
 
             action = np.zeros(len(self.env.actions), dtype=np.float32)
@@ -353,7 +376,9 @@ class ManualControl:
         pyglet.app.exit()
 
     def step(self, action):
-        if isinstance(action, np.ndarray):
+        if self._is_click_action_env and isinstance(action, np.ndarray) and action.shape == (2,):
+            action_desc = f"click=({action[0]:.3f}, {action[1]:.3f})"
+        elif isinstance(action, np.ndarray):
             action_desc = self._describe_action_vector(action)
         elif isinstance(self.env.action_space, spaces.Discrete):
             action_vector = self._discrete_actions[int(action)]
@@ -691,3 +716,28 @@ class ManualControl:
             f"pickup={action[self.env.actions.pickup]:.0f} "
             f"drop={action[self.env.actions.drop]:.0f}"
         )
+
+    def _detect_click_action_env(self) -> bool:
+        """Detect if the environment uses a click-based action space (Box(2) for x,y coords)."""
+        action_space = getattr(self.env, "action_space", None)
+        if isinstance(action_space, spaces.Box):
+            # Check if it's a 2D action space for click coordinates
+            if action_space.shape == (2,):
+                low, high = action_space.low, action_space.high
+                # Check if it looks like normalized coordinates (0-1 range)
+                if np.allclose(low, [0.0, 0.0]) and np.allclose(high, [1.0, 1.0]):
+                    return True
+        return False
+
+    def _handle_scene_click(self, x: int, y: int, window_width: int, window_height: int):
+        """Handle a click on the scene for click-based action environments."""
+        if not self._is_click_action_env:
+            return
+
+        # Convert window coordinates to normalized coordinates (0-1)
+        # Note: pyglet y=0 is at bottom, but we want y=0 at top for image coords
+        x_norm = x / window_width
+        y_norm = 1.0 - (y / window_height)  # Flip y axis
+
+        self._pending_click_action = np.array([x_norm, y_norm], dtype=np.float32)
+        print(f"Click at ({x}, {y}) -> normalized ({x_norm:.3f}, {y_norm:.3f})")
