@@ -308,10 +308,10 @@ class CameraControl(MiniWorldEnv, utils.EzPickle):
         center_x, center_y = w // 2, h // 2
 
         # Crosshair parameters
-        color = (0, 255, 0)  # Green in RGB
-        thickness = 1
-        gap = 5  # Gap in center
-        length = 15  # Length of crosshair lines
+        color = (255, 0, 0)  # Red in RGB
+        thickness = 2
+        gap = 4  # Gap in center
+        length = 20  # Length of crosshair lines
 
         # Draw horizontal lines
         cv2.line(img, (center_x - length - gap, center_y),
@@ -326,7 +326,7 @@ class CameraControl(MiniWorldEnv, utils.EzPickle):
                  (center_x, center_y + length + gap), color, thickness)
 
         # Draw small center dot
-        cv2.circle(img, (center_x, center_y), 2, color, -1)
+        cv2.circle(img, (center_x, center_y), 3, color, -1)
 
         return img
 

@@ -1,6 +1,7 @@
 import gymnasium as gym
 
 from miniworld.envs.cameracontrol import CameraControl
+from miniworld.envs.cameracontrolclick import CameraControlClick
 from miniworld.envs.collecthealth import CollectHealth
 from miniworld.envs.fourrooms import FourRooms
 from miniworld.envs.greenkey import GreenKey
@@ -20,6 +21,7 @@ from miniworld.envs.ymaze import YMaze, YMazeLeft, YMazeRight
 
 __all__ = [
     "CameraControl",
+    "CameraControlClick",
     "CollectHealth",
     "FourRooms",
     "GreenKey",
@@ -50,6 +52,11 @@ __all__ = [
 gym.register(
     id="MiniWorld-CameraControl-v0",
     entry_point="miniworld.envs.cameracontrol:CameraControl",
+)
+
+gym.register(
+    id="MiniWorld-CameraControlClick-v0",
+    entry_point="miniworld.envs.cameracontrolclick:CameraControlClick",
 )
 
 gym.register(
