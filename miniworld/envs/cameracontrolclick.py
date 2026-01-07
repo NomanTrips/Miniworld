@@ -173,19 +173,27 @@ class CameraControlClick(MiniWorldEnv, utils.EzPickle):
         dx = click_x - 0.5
         dy = click_y - 0.5
 
-        # Convert click offset to camera movement
-        # Scale by FOV to make movement proportional to what's visible
-        fov_scale = self.camera_fov / 60.0  # Normalize to default FOV
+        # Calculate distance from center for direction normalization
+        distance = math.sqrt(dx * dx + dy * dy)
 
-        # Pan: if click is to the right (dx > 0), pan right (decrease yaw)
-        # The pan_speed is in degrees, dx is -0.5 to 0.5
-        pan_amount = -dx * self.pan_speed * self.movement_scale * fov_scale
-        self.camera_yaw += pan_amount * math.pi / 180
+        # Use fixed step size based on direction, not proportional to distance
+        # This prevents the "slowing down" effect as crosshair approaches target
+        if distance > 0.01:  # Avoid division by zero for clicks near center
+            # Normalize to get direction
+            dir_x = dx / distance
+            dir_y = dy / distance
 
-        # Tilt: if click is above center (dy < 0), tilt up (increase pitch)
-        # if click is below center (dy > 0), tilt down (decrease pitch)
-        tilt_amount = -dy * self.tilt_speed * self.movement_scale * fov_scale
-        self.camera_pitch = np.clip(self.camera_pitch + tilt_amount, -89.0, 89.0)
+            # Apply fixed step size in the click direction
+            # Scale by FOV so zoomed views have appropriately sized steps
+            fov_scale = self.camera_fov / 60.0
+
+            # Pan: if click is to the right (dir_x > 0), pan right (decrease yaw)
+            pan_amount = -dir_x * self.pan_speed * self.movement_scale * fov_scale
+            self.camera_yaw += pan_amount * math.pi / 180
+
+            # Tilt: if click is above center (dir_y < 0), tilt up (increase pitch)
+            tilt_amount = -dir_y * self.tilt_speed * self.movement_scale * fov_scale
+            self.camera_pitch = np.clip(self.camera_pitch + tilt_amount, -89.0, 89.0)
 
         # Sync agent to camera for rendering
         self._sync_agent_to_camera()
