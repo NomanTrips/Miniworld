@@ -29,15 +29,14 @@ class Sign(MiniWorldEnv, utils.EzPickle):
     If you use this environment, please cite the above paper (Liu et al., 2020).
 
     Small U-shaped maze with 6 objects: (blue, red, green) x (key, box).
-    A sign on the wall says "blue", "green", or "red."
+    A sign on the wall displays a random color ("BLUE", "GREEN", or "RED") at the
+    start of each episode. The agent's goal is to navigate to any object matching
+    that color.
 
     In addition to the normal state, accessible under state["obs"], the state also
     includes a goal under state["goal"] that specifies box or key.
 
     The episode ends when any object is touched.
-
-    The sign and goal can be configured via the color_index and goal arguments to
-    the constructor respectively.
 
     Includes an action to end the episode.
 
@@ -57,18 +56,17 @@ class Sign(MiniWorldEnv, utils.EzPickle):
 
     ## Rewards
 
-    +1 for touching the object where the color matches the sign and the shape matches the goal
-    -1 for touching any other object
+    +1 for touching any object whose color matches the sign
+    -1 for touching any object whose color does not match the sign
 
     ## Arguments
 
     * `size`:  size of the square room.
     * `max_episode_steps`: number of steps before the episode ends.
-    * `color_index`: specifies whether the sign says blue (0), green (1), or red (2).
-    * `goal`: specifies box (0) or key (1).
+    * `goal`: specifies box (0) or key (1) for the observation space goal field.
 
     ```python
-    env = gymnasium.make("Miniworld-Sign-v0", size=10, max_episode_steps=20, color_index=0, goal=0)
+    env = gymnasium.make("Miniworld-Sign-v0", size=10, max_episode_steps=20)
     ```
     """
 
@@ -115,6 +113,9 @@ class Sign(MiniWorldEnv, utils.EzPickle):
         self._color_index = color_index
 
     def _gen_world(self):
+        # Randomize the color shown on the sign for each episode
+        self._color_index = self.np_random.integers(0, 3)
+
         gap_size = 0.25
         top_room = self.add_rect_room(
             min_x=0, max_x=self._size, min_z=0, max_z=self._size * 0.65
@@ -176,13 +177,8 @@ class Sign(MiniWorldEnv, utils.EzPickle):
             for color_index, obj in enumerate(object_pair):
                 if self.near(obj):
                     termination = True
-                    reward = (
-                        float(
-                            color_index == self._color_index and obj_index == self._goal
-                        )
-                        * 2
-                        - 1
-                    )
+                    # Reward +1 if the object's color matches the sign, -1 otherwise
+                    reward = float(color_index == self._color_index) * 2 - 1
 
         state = {"obs": obs, "goal": self._goal}
         return state, reward, termination, truncation, info
