@@ -57,7 +57,7 @@ class Sign(MiniWorldEnv, utils.EzPickle):
     ## Rewards
 
     +1 for touching any object whose color matches the sign
-    -1 for touching any object whose color does not match the sign
+    Touching objects with non-matching colors has no effect
 
     ## Arguments
 
@@ -175,10 +175,10 @@ class Sign(MiniWorldEnv, utils.EzPickle):
 
         for obj_index, object_pair in enumerate(self._objects):
             for color_index, obj in enumerate(object_pair):
-                if self.near(obj):
+                if self.near(obj) and color_index == self._color_index:
+                    # Only end episode when touching an object with the correct color
                     termination = True
-                    # Reward +1 if the object's color matches the sign, -1 otherwise
-                    reward = float(color_index == self._color_index) * 2 - 1
+                    reward = 1.0
 
         state = {"obs": obs, "goal": self._goal}
         return state, reward, termination, truncation, info
