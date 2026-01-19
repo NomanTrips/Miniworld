@@ -108,6 +108,12 @@ def main():
             "value to keep recordings in a single chunk even in append mode"
         ),
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="random seed for environment reset (useful for finding specific configurations)",
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -136,6 +142,7 @@ def main():
         automatic_recording=args.automatic_recording,
         max_chunk_size_mb=args.max_chunk_size_mb,
         show_controls=args.show_controls,
+        seed=args.seed,
     )
     manual_control.run()
 

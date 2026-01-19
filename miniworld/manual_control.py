@@ -26,6 +26,7 @@ class ManualControl:
         automatic_recording: bool = False,
         max_chunk_size_mb: Optional[int] = None,
         show_controls: bool = True,
+        seed: Optional[int] = None,
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -94,6 +95,9 @@ class ManualControl:
         self._is_click_action_env = self._detect_click_action_env()
         self._pending_click_action: Optional[np.ndarray] = None
 
+        # Seed for reproducible environment resets
+        self._seed = seed
+
     @staticmethod
     def _parse_window_size(window_size: str):
         try:
@@ -132,7 +136,9 @@ class ManualControl:
                 )
         print("============")
 
-        self.env.reset()
+        if self._seed is not None:
+            print(f"Using seed: {self._seed}")
+        self.env.reset(seed=self._seed)
 
         # Create the display window
         self.env.render()
@@ -167,8 +173,8 @@ class ManualControl:
             self.key_handler.on_key_press(symbol, modifiers)
 
             if symbol == key.BACKSPACE or symbol == key.SLASH:
-                print("RESET")
-                self.env.reset()
+                print(f"RESET (seed={self._seed})")
+                self.env.reset(seed=self._seed)
                 self.env.render()
                 return
 
@@ -402,10 +408,10 @@ class ManualControl:
             print(f"reward={reward:.2f}")
 
         if termination or truncation:
-            print("done!")
+            print(f"done! (resetting with seed={self._seed})")
             if self._automatic_recording:
                 self._stop_episode_writer()
-            self.env.reset()
+            self.env.reset(seed=self._seed)
             if self._automatic_recording:
                 self._start_episode_writer_if_needed()
 
