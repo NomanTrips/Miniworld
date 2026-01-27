@@ -78,7 +78,7 @@ class Sign(MiniWorldEnv, utils.EzPickle):
             raise ValueError("Only supported values for goal are 0, 1.")
 
         params = DEFAULT_PARAMS.no_random()
-        params.set("forward_step", 0.7)  # larger steps
+        params.set("forward_step", 0.15)  # larger steps
         params.set("turn_step", 45)  # 45 degree rotation
 
         self._size = size
