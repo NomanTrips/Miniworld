@@ -27,6 +27,7 @@ class ManualControl:
         max_chunk_size_mb: Optional[int] = None,
         show_controls: bool = True,
         seed: Optional[int] = None,
+        no_mouse_recenter: bool = False,
     ):
         self.env = env.unwrapped
         self._box_action_space = self._get_box_action_space()
@@ -47,6 +48,15 @@ class ManualControl:
 
         self._last_mouse_turn_delta = 0.0
         self._last_mouse_pitch_delta = 0.0
+
+        # Virtual mouse position - accumulates movement without re-centering
+        # This is useful for external recording tools that capture cursor position
+        self._virtual_mouse_x = 0.0
+        self._virtual_mouse_y = 0.0
+
+        # When True, don't re-center the mouse cursor (useful for recording)
+        # The cursor will move freely and may hit screen edges
+        self._no_mouse_recenter = no_mouse_recenter
 
         self._fullscreen = fullscreen
         # When the on-screen controls are enabled, allow the mouse cursor to move
@@ -234,7 +244,11 @@ class ManualControl:
                 return
             self.mouse_dx += dx
             self.mouse_dy += dy
-            self._recenter_mouse_cursor(window)
+            # Accumulate virtual mouse position (doesn't reset)
+            self._virtual_mouse_x += dx
+            self._virtual_mouse_y += dy
+            if not self._no_mouse_recenter:
+                self._recenter_mouse_cursor(window)
 
         @env.unwrapped.window.event
         def on_mouse_drag(x, y, dx, dy, buttons, modifiers):
@@ -244,7 +258,11 @@ class ManualControl:
                 return
             self.mouse_dx += dx
             self.mouse_dy += dy
-            self._recenter_mouse_cursor(window)
+            # Accumulate virtual mouse position (doesn't reset)
+            self._virtual_mouse_x += dx
+            self._virtual_mouse_y += dy
+            if not self._no_mouse_recenter:
+                self._recenter_mouse_cursor(window)
 
         @env.unwrapped.window.event
         def on_draw():

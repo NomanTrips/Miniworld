@@ -163,7 +163,8 @@ class Sign(MiniWorldEnv, utils.EzPickle):
             height=1,
         )
         self.entities.append(sign)
-        self.place_agent(min_x=4, max_x=5, min_z=4, max_z=6)
+        # Randomly place agent in the top room (opposite the sign) with random direction
+        self.place_agent(room=top_room)
 
     def step(self, action):
         end_requested = np.isscalar(action) and int(action) == self._end_action_index

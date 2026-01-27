@@ -114,6 +114,14 @@ def main():
         default=None,
         help="random seed for environment reset (useful for finding specific configurations)",
     )
+    parser.add_argument(
+        "--no-mouse-recenter",
+        action="store_true",
+        help=(
+            "disable mouse cursor re-centering; the cursor will move freely across the "
+            "screen, which is useful for recording mouse position with external tools"
+        ),
+    )
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
@@ -143,6 +151,7 @@ def main():
         max_chunk_size_mb=args.max_chunk_size_mb,
         show_controls=args.show_controls,
         seed=args.seed,
+        no_mouse_recenter=args.no_mouse_recenter,
     )
     manual_control.run()
 
